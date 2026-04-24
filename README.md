@@ -1,31 +1,56 @@
-# New Project Template
+# Key Protection Module
 
-This repository contains a template that can be used to seed a repository for a
-new Google open source project.
+This repository contains the Key Protection Module.
 
-See https://opensource.google/documentation/reference/releasing for more information about
-releasing a new Google open source project.
+## How to Contribute
 
-This template uses the Apache license, as is Google's default.  See the
-documentation for instructions on using alternate license.
+To make a new contribution, please follow these steps:
 
-## How to use this template
+1. Clone the repository:
+   ```shell
+   git clone <repository-url>
+   ```
+2. Create a new branch for your changes:
+   ```shell
+   cd key-protection-module
+   git checkout -b your-feature-branch
+   ```
+3. Make your changes to the codebase.
+4. Commit your changes with a descriptive commit message:
+   ```shell
+   git add .
+   git commit -m "Add new feature X"
+   ```
+5. Push your branch to the remote repository:
+   ```shell
+   git push origin your-feature-branch
+   ```
+6. Open a Pull Request (PR) to merge your changes into the main branch.
 
-1. Clone it from GitHub.
-    * There is no reason to fork it.
-1. Create a new local repository and copy the files from this repo into it.
-1. Modify README.md and docs/contributing.md to represent your project, not the
-   template project.
-1. Develop your new project!
+Please ensure all source files include the appropriate copyright and license headers. See `docs/contributing.md` for more details.
 
-``` shell
-git clone https://github.com/google/new-project
-mkdir my-new-thing
-cd my-new-thing
-git init
-cp -r ../new-project/* ../new-project/.github .
-git add *
-git commit -a -m 'Boilerplate for new Google open source project'
+## Build Steps
+
+To build the key manager module, follow these steps:
+
+```shell
+set -exuo pipefail
+# Install build dependencies for Rust
+apt-get update && apt-get install -y clang build-essential curl tar
+
+# Install CMake 3.28.3 from pre-compiled binaries for flexibility across environments
+curl -sSL https://github.com/Kitware/CMake/releases/download/v3.28.3/cmake-3.28.3-linux-x86_64.tar.gz -o cmake.tar.gz
+tar -zxvf cmake.tar.gz -C /opt/
+export PATH="/opt/cmake-3.28.3-linux-x86_64/bin:$PATH"
+rm cmake.tar.gz
+
+# Install bindgen-cli (needed by BoringSSL's CMake build)
+cargo install bindgen-cli
+export PATH="$HOME/.cargo/bin:$PATH"
+
+# Build the Rust keymanager libraries
+cd keymanager
+cargo build --release
 ```
 
 ## Source Code Headers
