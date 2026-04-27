@@ -6,26 +6,27 @@ This repository contains the Key Protection Module.
 
 To make a new contribution, please follow these steps:
 
-1. Clone the repository:
+1. Fork the repository on GitHub.
+2. Clone your forked repository:
    ```shell
-   git clone <repository-url>
+   git clone --recurse-submodules <your-forked-repository-url>
    ```
-2. Create a new branch for your changes:
+3. Create a new branch for your changes:
    ```shell
    cd key-protection-module
    git checkout -b your-feature-branch
    ```
-3. Make your changes to the codebase.
-4. Commit your changes with a descriptive commit message:
+4. Make your changes to the codebase.
+5. Commit your changes with a descriptive commit message:
    ```shell
-   git add .
+   git add <files to be committed>
    git commit -m "Add new feature X"
    ```
-5. Push your branch to the remote repository:
+6. Push your branch to the remote repository:
    ```shell
    git push origin your-feature-branch
    ```
-6. Open a Pull Request (PR) to merge your changes into the main branch.
+7. Open a Pull Request (PR) to merge your changes into the main branch.
 
 Please ensure all source files include the appropriate copyright and license headers. See `docs/contributing.md` for more details.
 
