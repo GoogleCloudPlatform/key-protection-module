@@ -203,6 +203,10 @@ var (
 	// ClaimsRequestTimeout is the maximum time to wait for enqueuing the request to
 	// claims channel for getting the key claims.
 	ClaimsRequestTimeout = 5 * time.Second
+	// maxEnumerateLimit is the maximum number of keys to return in a single enumerate request.
+	maxEnumerateLimit uint64 = 1000
+	// defaultEnumerateLimit is the default number of keys to return if limit is not provided.
+	defaultEnumerateLimit uint64 = 100
 )
 
 // New creates a new WSD Server listening on the given unix socket path.
@@ -453,8 +457,19 @@ func (s *Server) handleGetCapabilities(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, &resp, http.StatusOK)
 }
 
-func (s *Server) handleEnumerateKeys(w http.ResponseWriter, _ *http.Request) {
-	keys, _, err := s.keyProtectionService.EnumerateKEMKeys(100, 0)
+func (s *Server) handleEnumerateKeys(w http.ResponseWriter, r *http.Request) {
+	var req api.EnumerateKeysRequest
+	if err := readRequest(r, &req); err != nil {
+		writeError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	limit := req.GetLimit()
+	if limit == 0 {
+		limit = defaultEnumerateLimit
+	} else if limit > maxEnumerateLimit {
+		limit = maxEnumerateLimit
+	}
+	keys, _, err := s.keyProtectionService.EnumerateKEMKeys(int(limit), int(req.GetOffset()))
 	if err != nil {
 		writeError(w, fmt.Sprintf("failed to enumerate keys: %v", err), httpStatusFromError(err))
 		return
@@ -534,6 +549,9 @@ func readRequest(r *http.Request, req proto.Message) error {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		return fmt.Errorf("failed to read request body: %w", err)
+	}
+	if len(body) == 0 {
+		return nil
 	}
 	if err := protojson.Unmarshal(body, req); err != nil {
 		return fmt.Errorf("invalid request body: %w", err)

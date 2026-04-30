@@ -89,6 +89,8 @@ type mockKeyProtectionService struct {
 	receivedKEMUUID       uuid.UUID
 	receivedEncKey        []byte
 	receivedAAD           []byte
+	receivedLimit         int
+	receivedOffset        int
 	enumeratedKeys        []kpskcc.KEMKeyInfo
 	enumerateErr          error
 }
@@ -99,7 +101,9 @@ func (m *mockKeyProtectionService) GenerateKEMKeypair(_ *keymanager.HpkeAlgorith
 	return m.uuid, m.pubKey, m.err
 }
 
-func (m *mockKeyProtectionService) EnumerateKEMKeys(_, _ int) ([]kpskcc.KEMKeyInfo, bool, error) {
+func (m *mockKeyProtectionService) EnumerateKEMKeys(limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
+	m.receivedLimit = limit
+	m.receivedOffset = offset
 	return m.enumeratedKeys, false, m.enumerateErr
 }
 
@@ -674,6 +678,27 @@ func TestHandleEnumerateKeysWithKeys(t *testing.T) {
 	// Approximate check for expiration time
 	if info2.ExpirationTime <= float64(time.Now().Unix()) {
 		t.Fatalf("expected expiration time in the future, got %f", info2.ExpirationTime)
+	}
+}
+
+func TestHandleEnumerateKeysPagination(t *testing.T) {
+	mockKps := &mockKeyProtectionService{}
+	srv := newTestServer(t, mockKps, &mockWorkloadService{})
+
+	reqBody := `{"limit": 10, "offset": 5}`
+	req := httptest.NewRequest(http.MethodGet, "/v1/keys", strings.NewReader(reqBody))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	if mockKps.receivedLimit != 10 {
+		t.Errorf("expected limit 10, got %d", mockKps.receivedLimit)
+	}
+	if mockKps.receivedOffset != 5 {
+		t.Errorf("expected offset 5, got %d", mockKps.receivedOffset)
 	}
 }
 
