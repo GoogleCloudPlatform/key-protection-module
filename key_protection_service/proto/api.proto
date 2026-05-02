@@ -3,6 +3,10 @@ syntax = "proto3";
 package keymanager.key_protection_service;
 
 import "km_common/proto/algorithms.proto";
+import "km_common/proto/crypto_types.proto";
+import "km_common/proto/key_claims.proto";
+import "km_common/proto/payload.proto";
+import "buf/validate/validate.proto";
 
 option go_package = "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/proto;kpspb";
 
@@ -15,19 +19,19 @@ service KeyProtectionService {
 }
 
 message GenerateKEMKeypairRequest {
-  keymanager.HpkeAlgorithm algo = 1;
-  bytes binding_pub_key = 2;
+  keymanager.HpkeAlgorithm algo = 1 [(buf.validate.field).required = true];
+  keymanager.HpkePublicKey binding_pub_key = 2;
   uint64 lifespan_secs = 3;
 }
 
 message GenerateKEMKeypairResponse {
-  string kem_uuid = 1;
-  bytes kem_pub_key = 2;
+  keymanager.KeyHandle key_handle = 1;
+  keymanager.KemPublicKey kem_pub_key = 2;
 }
 
 message DecapAndSealRequest {
-  string kem_uuid = 1;
-  bytes encapsulated_key = 2;
+  keymanager.KeyHandle key_handle = 1;
+  keymanager.KemCiphertext ciphertext = 2;
   bytes aad = 3;
 }
 
@@ -42,7 +46,7 @@ message EnumerateKEMKeysRequest {
 }
 
 message KEMKeyInfo {
-  string id = 1;
+  keymanager.KeyHandle key_handle = 1;
   keymanager.HpkeAlgorithm algorithm = 2;
   bytes kem_pub_key = 3;
   uint64 remaining_lifespan_secs = 4;
@@ -54,19 +58,18 @@ message EnumerateKEMKeysResponse {
 }
 
 message DestroyKEMKeyRequest {
-  string kem_uuid = 1;
+  keymanager.KeyHandle key_handle = 1;
 }
 
 message DestroyKEMKeyResponse {
 }
 
 message GetKEMKeyRequest {
-  string kem_uuid = 1;
+  keymanager.KeyHandle key_handle = 1;
 }
 
 message GetKEMKeyResponse {
-  bytes kem_pub_key = 1;
-  bytes binding_pub_key = 2;
-  keymanager.HpkeAlgorithm algorithm = 3;
-  uint64 remaining_lifespan_secs = 4;
+  keymanager.KemPublicKey kem_pub_key = 1;
+  keymanager.HpkePublicKey binding_pub_key = 2;
+  uint64 remaining_lifespan_secs = 3;
 }

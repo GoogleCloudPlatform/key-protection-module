@@ -7,6 +7,7 @@
 package kpspb
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	proto "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -25,7 +26,7 @@ const (
 type GenerateKEMKeypairRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Algo          *proto.HpkeAlgorithm   `protobuf:"bytes,1,opt,name=algo,proto3" json:"algo,omitempty"`
-	BindingPubKey []byte                 `protobuf:"bytes,2,opt,name=binding_pub_key,json=bindingPubKey,proto3" json:"binding_pub_key,omitempty"`
+	BindingPubKey *proto.HpkePublicKey   `protobuf:"bytes,2,opt,name=binding_pub_key,json=bindingPubKey,proto3" json:"binding_pub_key,omitempty"`
 	LifespanSecs  uint64                 `protobuf:"varint,3,opt,name=lifespan_secs,json=lifespanSecs,proto3" json:"lifespan_secs,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -68,7 +69,7 @@ func (x *GenerateKEMKeypairRequest) GetAlgo() *proto.HpkeAlgorithm {
 	return nil
 }
 
-func (x *GenerateKEMKeypairRequest) GetBindingPubKey() []byte {
+func (x *GenerateKEMKeypairRequest) GetBindingPubKey() *proto.HpkePublicKey {
 	if x != nil {
 		return x.BindingPubKey
 	}
@@ -84,8 +85,8 @@ func (x *GenerateKEMKeypairRequest) GetLifespanSecs() uint64 {
 
 type GenerateKEMKeypairResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	KemUuid       string                 `protobuf:"bytes,1,opt,name=kem_uuid,json=kemUuid,proto3" json:"kem_uuid,omitempty"`
-	KemPubKey     []byte                 `protobuf:"bytes,2,opt,name=kem_pub_key,json=kemPubKey,proto3" json:"kem_pub_key,omitempty"`
+	KeyHandle     *proto.KeyHandle       `protobuf:"bytes,1,opt,name=key_handle,json=keyHandle,proto3" json:"key_handle,omitempty"`
+	KemPubKey     *proto.KemPublicKey    `protobuf:"bytes,2,opt,name=kem_pub_key,json=kemPubKey,proto3" json:"kem_pub_key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -120,14 +121,14 @@ func (*GenerateKEMKeypairResponse) Descriptor() ([]byte, []int) {
 	return file_key_protection_service_proto_api_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *GenerateKEMKeypairResponse) GetKemUuid() string {
+func (x *GenerateKEMKeypairResponse) GetKeyHandle() *proto.KeyHandle {
 	if x != nil {
-		return x.KemUuid
+		return x.KeyHandle
 	}
-	return ""
+	return nil
 }
 
-func (x *GenerateKEMKeypairResponse) GetKemPubKey() []byte {
+func (x *GenerateKEMKeypairResponse) GetKemPubKey() *proto.KemPublicKey {
 	if x != nil {
 		return x.KemPubKey
 	}
@@ -135,12 +136,12 @@ func (x *GenerateKEMKeypairResponse) GetKemPubKey() []byte {
 }
 
 type DecapAndSealRequest struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	KemUuid         string                 `protobuf:"bytes,1,opt,name=kem_uuid,json=kemUuid,proto3" json:"kem_uuid,omitempty"`
-	EncapsulatedKey []byte                 `protobuf:"bytes,2,opt,name=encapsulated_key,json=encapsulatedKey,proto3" json:"encapsulated_key,omitempty"`
-	Aad             []byte                 `protobuf:"bytes,3,opt,name=aad,proto3" json:"aad,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	KeyHandle     *proto.KeyHandle       `protobuf:"bytes,1,opt,name=key_handle,json=keyHandle,proto3" json:"key_handle,omitempty"`
+	Ciphertext    *proto.KemCiphertext   `protobuf:"bytes,2,opt,name=ciphertext,proto3" json:"ciphertext,omitempty"`
+	Aad           []byte                 `protobuf:"bytes,3,opt,name=aad,proto3" json:"aad,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DecapAndSealRequest) Reset() {
@@ -173,16 +174,16 @@ func (*DecapAndSealRequest) Descriptor() ([]byte, []int) {
 	return file_key_protection_service_proto_api_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *DecapAndSealRequest) GetKemUuid() string {
+func (x *DecapAndSealRequest) GetKeyHandle() *proto.KeyHandle {
 	if x != nil {
-		return x.KemUuid
+		return x.KeyHandle
 	}
-	return ""
+	return nil
 }
 
-func (x *DecapAndSealRequest) GetEncapsulatedKey() []byte {
+func (x *DecapAndSealRequest) GetCiphertext() *proto.KemCiphertext {
 	if x != nil {
-		return x.EncapsulatedKey
+		return x.Ciphertext
 	}
 	return nil
 }
@@ -300,7 +301,7 @@ func (x *EnumerateKEMKeysRequest) GetOffset() int32 {
 
 type KEMKeyInfo struct {
 	state                 protoimpl.MessageState `protogen:"open.v1"`
-	Id                    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	KeyHandle             *proto.KeyHandle       `protobuf:"bytes,1,opt,name=key_handle,json=keyHandle,proto3" json:"key_handle,omitempty"`
 	Algorithm             *proto.HpkeAlgorithm   `protobuf:"bytes,2,opt,name=algorithm,proto3" json:"algorithm,omitempty"`
 	KemPubKey             []byte                 `protobuf:"bytes,3,opt,name=kem_pub_key,json=kemPubKey,proto3" json:"kem_pub_key,omitempty"`
 	RemainingLifespanSecs uint64                 `protobuf:"varint,4,opt,name=remaining_lifespan_secs,json=remainingLifespanSecs,proto3" json:"remaining_lifespan_secs,omitempty"`
@@ -338,11 +339,11 @@ func (*KEMKeyInfo) Descriptor() ([]byte, []int) {
 	return file_key_protection_service_proto_api_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *KEMKeyInfo) GetId() string {
+func (x *KEMKeyInfo) GetKeyHandle() *proto.KeyHandle {
 	if x != nil {
-		return x.Id
+		return x.KeyHandle
 	}
-	return ""
+	return nil
 }
 
 func (x *KEMKeyInfo) GetAlgorithm() *proto.HpkeAlgorithm {
@@ -420,7 +421,7 @@ func (x *EnumerateKEMKeysResponse) GetHasMore() bool {
 
 type DestroyKEMKeyRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	KemUuid       string                 `protobuf:"bytes,1,opt,name=kem_uuid,json=kemUuid,proto3" json:"kem_uuid,omitempty"`
+	KeyHandle     *proto.KeyHandle       `protobuf:"bytes,1,opt,name=key_handle,json=keyHandle,proto3" json:"key_handle,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -455,11 +456,11 @@ func (*DestroyKEMKeyRequest) Descriptor() ([]byte, []int) {
 	return file_key_protection_service_proto_api_proto_rawDescGZIP(), []int{7}
 }
 
-func (x *DestroyKEMKeyRequest) GetKemUuid() string {
+func (x *DestroyKEMKeyRequest) GetKeyHandle() *proto.KeyHandle {
 	if x != nil {
-		return x.KemUuid
+		return x.KeyHandle
 	}
-	return ""
+	return nil
 }
 
 type DestroyKEMKeyResponse struct {
@@ -500,7 +501,7 @@ func (*DestroyKEMKeyResponse) Descriptor() ([]byte, []int) {
 
 type GetKEMKeyRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	KemUuid       string                 `protobuf:"bytes,1,opt,name=kem_uuid,json=kemUuid,proto3" json:"kem_uuid,omitempty"`
+	KeyHandle     *proto.KeyHandle       `protobuf:"bytes,1,opt,name=key_handle,json=keyHandle,proto3" json:"key_handle,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -535,19 +536,18 @@ func (*GetKEMKeyRequest) Descriptor() ([]byte, []int) {
 	return file_key_protection_service_proto_api_proto_rawDescGZIP(), []int{9}
 }
 
-func (x *GetKEMKeyRequest) GetKemUuid() string {
+func (x *GetKEMKeyRequest) GetKeyHandle() *proto.KeyHandle {
 	if x != nil {
-		return x.KemUuid
+		return x.KeyHandle
 	}
-	return ""
+	return nil
 }
 
 type GetKEMKeyResponse struct {
 	state                 protoimpl.MessageState `protogen:"open.v1"`
-	KemPubKey             []byte                 `protobuf:"bytes,1,opt,name=kem_pub_key,json=kemPubKey,proto3" json:"kem_pub_key,omitempty"`
-	BindingPubKey         []byte                 `protobuf:"bytes,2,opt,name=binding_pub_key,json=bindingPubKey,proto3" json:"binding_pub_key,omitempty"`
-	Algorithm             *proto.HpkeAlgorithm   `protobuf:"bytes,3,opt,name=algorithm,proto3" json:"algorithm,omitempty"`
-	RemainingLifespanSecs uint64                 `protobuf:"varint,4,opt,name=remaining_lifespan_secs,json=remainingLifespanSecs,proto3" json:"remaining_lifespan_secs,omitempty"`
+	KemPubKey             *proto.KemPublicKey    `protobuf:"bytes,1,opt,name=kem_pub_key,json=kemPubKey,proto3" json:"kem_pub_key,omitempty"`
+	BindingPubKey         *proto.HpkePublicKey   `protobuf:"bytes,2,opt,name=binding_pub_key,json=bindingPubKey,proto3" json:"binding_pub_key,omitempty"`
+	RemainingLifespanSecs uint64                 `protobuf:"varint,3,opt,name=remaining_lifespan_secs,json=remainingLifespanSecs,proto3" json:"remaining_lifespan_secs,omitempty"`
 	unknownFields         protoimpl.UnknownFields
 	sizeCache             protoimpl.SizeCache
 }
@@ -582,23 +582,16 @@ func (*GetKEMKeyResponse) Descriptor() ([]byte, []int) {
 	return file_key_protection_service_proto_api_proto_rawDescGZIP(), []int{10}
 }
 
-func (x *GetKEMKeyResponse) GetKemPubKey() []byte {
+func (x *GetKEMKeyResponse) GetKemPubKey() *proto.KemPublicKey {
 	if x != nil {
 		return x.KemPubKey
 	}
 	return nil
 }
 
-func (x *GetKEMKeyResponse) GetBindingPubKey() []byte {
+func (x *GetKEMKeyResponse) GetBindingPubKey() *proto.HpkePublicKey {
 	if x != nil {
 		return x.BindingPubKey
-	}
-	return nil
-}
-
-func (x *GetKEMKeyResponse) GetAlgorithm() *proto.HpkeAlgorithm {
-	if x != nil {
-		return x.Algorithm
 	}
 	return nil
 }
@@ -614,43 +607,49 @@ var File_key_protection_service_proto_api_proto protoreflect.FileDescriptor
 
 const file_key_protection_service_proto_api_proto_rawDesc = "" +
 	"\n" +
-	"&key_protection_service/proto/api.proto\x12!keymanager.key_protection_service\x1a km_common/proto/algorithms.proto\"\x97\x01\n" +
-	"\x19GenerateKEMKeypairRequest\x12-\n" +
-	"\x04algo\x18\x01 \x01(\v2\x19.keymanager.HpkeAlgorithmR\x04algo\x12&\n" +
-	"\x0fbinding_pub_key\x18\x02 \x01(\fR\rbindingPubKey\x12#\n" +
-	"\rlifespan_secs\x18\x03 \x01(\x04R\flifespanSecs\"W\n" +
-	"\x1aGenerateKEMKeypairResponse\x12\x19\n" +
-	"\bkem_uuid\x18\x01 \x01(\tR\akemUuid\x12\x1e\n" +
-	"\vkem_pub_key\x18\x02 \x01(\fR\tkemPubKey\"m\n" +
-	"\x13DecapAndSealRequest\x12\x19\n" +
-	"\bkem_uuid\x18\x01 \x01(\tR\akemUuid\x12)\n" +
-	"\x10encapsulated_key\x18\x02 \x01(\fR\x0fencapsulatedKey\x12\x10\n" +
+	"&key_protection_service/proto/api.proto\x12!keymanager.key_protection_service\x1a km_common/proto/algorithms.proto\x1a\"km_common/proto/crypto_types.proto\x1a km_common/proto/key_claims.proto\x1a\x1dkm_common/proto/payload.proto\x1a\x1bbuf/validate/validate.proto\"\xba\x01\n" +
+	"\x19GenerateKEMKeypairRequest\x125\n" +
+	"\x04algo\x18\x01 \x01(\v2\x19.keymanager.HpkeAlgorithmB\x06\xbaH\x03\xc8\x01\x01R\x04algo\x12A\n" +
+	"\x0fbinding_pub_key\x18\x02 \x01(\v2\x19.keymanager.HpkePublicKeyR\rbindingPubKey\x12#\n" +
+	"\rlifespan_secs\x18\x03 \x01(\x04R\flifespanSecs\"\x8c\x01\n" +
+	"\x1aGenerateKEMKeypairResponse\x124\n" +
+	"\n" +
+	"key_handle\x18\x01 \x01(\v2\x15.keymanager.KeyHandleR\tkeyHandle\x128\n" +
+	"\vkem_pub_key\x18\x02 \x01(\v2\x18.keymanager.KemPublicKeyR\tkemPubKey\"\x98\x01\n" +
+	"\x13DecapAndSealRequest\x124\n" +
+	"\n" +
+	"key_handle\x18\x01 \x01(\v2\x15.keymanager.KeyHandleR\tkeyHandle\x129\n" +
+	"\n" +
+	"ciphertext\x18\x02 \x01(\v2\x19.keymanager.KemCiphertextR\n" +
+	"ciphertext\x12\x10\n" +
 	"\x03aad\x18\x03 \x01(\fR\x03aad\"N\n" +
 	"\x14DecapAndSealResponse\x12\x19\n" +
 	"\bseal_enc\x18\x01 \x01(\fR\asealEnc\x12\x1b\n" +
 	"\tsealed_ct\x18\x02 \x01(\fR\bsealedCt\"G\n" +
 	"\x17EnumerateKEMKeysRequest\x12\x14\n" +
 	"\x05limit\x18\x01 \x01(\x05R\x05limit\x12\x16\n" +
-	"\x06offset\x18\x02 \x01(\x05R\x06offset\"\xad\x01\n" +
+	"\x06offset\x18\x02 \x01(\x05R\x06offset\"\xd3\x01\n" +
 	"\n" +
-	"KEMKeyInfo\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x127\n" +
+	"KEMKeyInfo\x124\n" +
+	"\n" +
+	"key_handle\x18\x01 \x01(\v2\x15.keymanager.KeyHandleR\tkeyHandle\x127\n" +
 	"\talgorithm\x18\x02 \x01(\v2\x19.keymanager.HpkeAlgorithmR\talgorithm\x12\x1e\n" +
 	"\vkem_pub_key\x18\x03 \x01(\fR\tkemPubKey\x126\n" +
 	"\x17remaining_lifespan_secs\x18\x04 \x01(\x04R\x15remainingLifespanSecs\"x\n" +
 	"\x18EnumerateKEMKeysResponse\x12A\n" +
 	"\x04keys\x18\x01 \x03(\v2-.keymanager.key_protection_service.KEMKeyInfoR\x04keys\x12\x19\n" +
-	"\bhas_more\x18\x02 \x01(\bR\ahasMore\"1\n" +
-	"\x14DestroyKEMKeyRequest\x12\x19\n" +
-	"\bkem_uuid\x18\x01 \x01(\tR\akemUuid\"\x17\n" +
-	"\x15DestroyKEMKeyResponse\"-\n" +
-	"\x10GetKEMKeyRequest\x12\x19\n" +
-	"\bkem_uuid\x18\x01 \x01(\tR\akemUuid\"\xcc\x01\n" +
-	"\x11GetKEMKeyResponse\x12\x1e\n" +
-	"\vkem_pub_key\x18\x01 \x01(\fR\tkemPubKey\x12&\n" +
-	"\x0fbinding_pub_key\x18\x02 \x01(\fR\rbindingPubKey\x127\n" +
-	"\talgorithm\x18\x03 \x01(\v2\x19.keymanager.HpkeAlgorithmR\talgorithm\x126\n" +
-	"\x17remaining_lifespan_secs\x18\x04 \x01(\x04R\x15remainingLifespanSecs2\xb6\x05\n" +
+	"\bhas_more\x18\x02 \x01(\bR\ahasMore\"L\n" +
+	"\x14DestroyKEMKeyRequest\x124\n" +
+	"\n" +
+	"key_handle\x18\x01 \x01(\v2\x15.keymanager.KeyHandleR\tkeyHandle\"\x17\n" +
+	"\x15DestroyKEMKeyResponse\"H\n" +
+	"\x10GetKEMKeyRequest\x124\n" +
+	"\n" +
+	"key_handle\x18\x01 \x01(\v2\x15.keymanager.KeyHandleR\tkeyHandle\"\xc8\x01\n" +
+	"\x11GetKEMKeyResponse\x128\n" +
+	"\vkem_pub_key\x18\x01 \x01(\v2\x18.keymanager.KemPublicKeyR\tkemPubKey\x12A\n" +
+	"\x0fbinding_pub_key\x18\x02 \x01(\v2\x19.keymanager.HpkePublicKeyR\rbindingPubKey\x126\n" +
+	"\x17remaining_lifespan_secs\x18\x03 \x01(\x04R\x15remainingLifespanSecs2\xb6\x05\n" +
 	"\x14KeyProtectionService\x12\x91\x01\n" +
 	"\x12GenerateKEMKeypair\x12<.keymanager.key_protection_service.GenerateKEMKeypairRequest\x1a=.keymanager.key_protection_service.GenerateKEMKeypairResponse\x12\x7f\n" +
 	"\fDecapAndSeal\x126.keymanager.key_protection_service.DecapAndSealRequest\x1a7.keymanager.key_protection_service.DecapAndSealResponse\x12\x8b\x01\n" +
@@ -684,27 +683,40 @@ var file_key_protection_service_proto_api_proto_goTypes = []any{
 	(*GetKEMKeyRequest)(nil),           // 9: keymanager.key_protection_service.GetKEMKeyRequest
 	(*GetKEMKeyResponse)(nil),          // 10: keymanager.key_protection_service.GetKEMKeyResponse
 	(*proto.HpkeAlgorithm)(nil),        // 11: keymanager.HpkeAlgorithm
+	(*proto.HpkePublicKey)(nil),        // 12: keymanager.HpkePublicKey
+	(*proto.KeyHandle)(nil),            // 13: keymanager.KeyHandle
+	(*proto.KemPublicKey)(nil),         // 14: keymanager.KemPublicKey
+	(*proto.KemCiphertext)(nil),        // 15: keymanager.KemCiphertext
 }
 var file_key_protection_service_proto_api_proto_depIdxs = []int32{
 	11, // 0: keymanager.key_protection_service.GenerateKEMKeypairRequest.algo:type_name -> keymanager.HpkeAlgorithm
-	11, // 1: keymanager.key_protection_service.KEMKeyInfo.algorithm:type_name -> keymanager.HpkeAlgorithm
-	5,  // 2: keymanager.key_protection_service.EnumerateKEMKeysResponse.keys:type_name -> keymanager.key_protection_service.KEMKeyInfo
-	11, // 3: keymanager.key_protection_service.GetKEMKeyResponse.algorithm:type_name -> keymanager.HpkeAlgorithm
-	0,  // 4: keymanager.key_protection_service.KeyProtectionService.GenerateKEMKeypair:input_type -> keymanager.key_protection_service.GenerateKEMKeypairRequest
-	2,  // 5: keymanager.key_protection_service.KeyProtectionService.DecapAndSeal:input_type -> keymanager.key_protection_service.DecapAndSealRequest
-	4,  // 6: keymanager.key_protection_service.KeyProtectionService.EnumerateKEMKeys:input_type -> keymanager.key_protection_service.EnumerateKEMKeysRequest
-	7,  // 7: keymanager.key_protection_service.KeyProtectionService.DestroyKEMKey:input_type -> keymanager.key_protection_service.DestroyKEMKeyRequest
-	9,  // 8: keymanager.key_protection_service.KeyProtectionService.GetKEMKey:input_type -> keymanager.key_protection_service.GetKEMKeyRequest
-	1,  // 9: keymanager.key_protection_service.KeyProtectionService.GenerateKEMKeypair:output_type -> keymanager.key_protection_service.GenerateKEMKeypairResponse
-	3,  // 10: keymanager.key_protection_service.KeyProtectionService.DecapAndSeal:output_type -> keymanager.key_protection_service.DecapAndSealResponse
-	6,  // 11: keymanager.key_protection_service.KeyProtectionService.EnumerateKEMKeys:output_type -> keymanager.key_protection_service.EnumerateKEMKeysResponse
-	8,  // 12: keymanager.key_protection_service.KeyProtectionService.DestroyKEMKey:output_type -> keymanager.key_protection_service.DestroyKEMKeyResponse
-	10, // 13: keymanager.key_protection_service.KeyProtectionService.GetKEMKey:output_type -> keymanager.key_protection_service.GetKEMKeyResponse
-	9,  // [9:14] is the sub-list for method output_type
-	4,  // [4:9] is the sub-list for method input_type
-	4,  // [4:4] is the sub-list for extension type_name
-	4,  // [4:4] is the sub-list for extension extendee
-	0,  // [0:4] is the sub-list for field type_name
+	12, // 1: keymanager.key_protection_service.GenerateKEMKeypairRequest.binding_pub_key:type_name -> keymanager.HpkePublicKey
+	13, // 2: keymanager.key_protection_service.GenerateKEMKeypairResponse.key_handle:type_name -> keymanager.KeyHandle
+	14, // 3: keymanager.key_protection_service.GenerateKEMKeypairResponse.kem_pub_key:type_name -> keymanager.KemPublicKey
+	13, // 4: keymanager.key_protection_service.DecapAndSealRequest.key_handle:type_name -> keymanager.KeyHandle
+	15, // 5: keymanager.key_protection_service.DecapAndSealRequest.ciphertext:type_name -> keymanager.KemCiphertext
+	13, // 6: keymanager.key_protection_service.KEMKeyInfo.key_handle:type_name -> keymanager.KeyHandle
+	11, // 7: keymanager.key_protection_service.KEMKeyInfo.algorithm:type_name -> keymanager.HpkeAlgorithm
+	5,  // 8: keymanager.key_protection_service.EnumerateKEMKeysResponse.keys:type_name -> keymanager.key_protection_service.KEMKeyInfo
+	13, // 9: keymanager.key_protection_service.DestroyKEMKeyRequest.key_handle:type_name -> keymanager.KeyHandle
+	13, // 10: keymanager.key_protection_service.GetKEMKeyRequest.key_handle:type_name -> keymanager.KeyHandle
+	14, // 11: keymanager.key_protection_service.GetKEMKeyResponse.kem_pub_key:type_name -> keymanager.KemPublicKey
+	12, // 12: keymanager.key_protection_service.GetKEMKeyResponse.binding_pub_key:type_name -> keymanager.HpkePublicKey
+	0,  // 13: keymanager.key_protection_service.KeyProtectionService.GenerateKEMKeypair:input_type -> keymanager.key_protection_service.GenerateKEMKeypairRequest
+	2,  // 14: keymanager.key_protection_service.KeyProtectionService.DecapAndSeal:input_type -> keymanager.key_protection_service.DecapAndSealRequest
+	4,  // 15: keymanager.key_protection_service.KeyProtectionService.EnumerateKEMKeys:input_type -> keymanager.key_protection_service.EnumerateKEMKeysRequest
+	7,  // 16: keymanager.key_protection_service.KeyProtectionService.DestroyKEMKey:input_type -> keymanager.key_protection_service.DestroyKEMKeyRequest
+	9,  // 17: keymanager.key_protection_service.KeyProtectionService.GetKEMKey:input_type -> keymanager.key_protection_service.GetKEMKeyRequest
+	1,  // 18: keymanager.key_protection_service.KeyProtectionService.GenerateKEMKeypair:output_type -> keymanager.key_protection_service.GenerateKEMKeypairResponse
+	3,  // 19: keymanager.key_protection_service.KeyProtectionService.DecapAndSeal:output_type -> keymanager.key_protection_service.DecapAndSealResponse
+	6,  // 20: keymanager.key_protection_service.KeyProtectionService.EnumerateKEMKeys:output_type -> keymanager.key_protection_service.EnumerateKEMKeysResponse
+	8,  // 21: keymanager.key_protection_service.KeyProtectionService.DestroyKEMKey:output_type -> keymanager.key_protection_service.DestroyKEMKeyResponse
+	10, // 22: keymanager.key_protection_service.KeyProtectionService.GetKEMKey:output_type -> keymanager.key_protection_service.GetKEMKeyResponse
+	18, // [18:23] is the sub-list for method output_type
+	13, // [13:18] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_key_protection_service_proto_api_proto_init() }
