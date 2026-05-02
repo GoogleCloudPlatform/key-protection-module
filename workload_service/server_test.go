@@ -93,29 +93,29 @@ type mockKeyProtectionService struct {
 	enumerateErr          error
 }
 
-func (m *mockKeyProtectionService) GenerateKEMKeypair(_ *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+func (m *mockKeyProtectionService) GenerateKEMKeypair(_ context.Context, _ *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	m.receivedPubKey = bindingPubKey
 	m.receivedLifespan = lifespanSecs
 	return m.uuid, m.pubKey, m.err
 }
 
-func (m *mockKeyProtectionService) EnumerateKEMKeys(_, _ int) ([]kpskcc.KEMKeyInfo, bool, error) {
+func (m *mockKeyProtectionService) EnumerateKEMKeys(_ context.Context, _, _ int) ([]kpskcc.KEMKeyInfo, bool, error) {
 	return m.enumeratedKeys, false, m.enumerateErr
 }
 
-func (m *mockKeyProtectionService) DestroyKEMKey(kemUUID uuid.UUID) error {
+func (m *mockKeyProtectionService) DestroyKEMKey(_ context.Context, kemUUID uuid.UUID) error {
 	m.destroyedUUID = kemUUID
 	return m.destroyErr
 }
 
-func (m *mockKeyProtectionService) DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error) {
+func (m *mockKeyProtectionService) DecapAndSeal(_ context.Context, kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error) {
 	m.receivedKEMUUID = kemUUID
 	m.receivedEncKey = encapsulatedKey
 	m.receivedAAD = aad
 	return m.sealEnc, m.sealedCT, m.err
 }
 
-func (m *mockKeyProtectionService) GetKEMKey(_ uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+func (m *mockKeyProtectionService) GetKEMKey(_ context.Context, _ uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
 	return m.pubKey, m.bindingPubKey, m.algo, m.remainingLifespanSecs, m.err
 }
 
