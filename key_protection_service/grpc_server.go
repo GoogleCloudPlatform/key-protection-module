@@ -2,6 +2,7 @@ package keyprotectionservice
 
 import (
 	"context"
+	"errors"
 
 	"buf.build/go/protovalidate"
 	kpspb "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/proto"
@@ -14,13 +15,37 @@ import (
 // grpcServer is the gRPC server wrapper for the KeyProtectionService.
 type grpcServer struct {
 	kpspb.UnimplementedKeyProtectionServiceServer
-	svc *Service
+	svc KeyProtectionService
 }
 
 // NewGrpcServer creates a new gRPC server wrapper for the KeyProtectionService.
-func NewGrpcServer(svc *Service) *grpcServer {
+// It accepts the KeyProtectionService interface so tests can inject mocks
+// directly without going through the production Service wrapper.
+func NewGrpcServer(svc KeyProtectionService) kpspb.KeyProtectionServiceServer {
 	return &grpcServer{
 		svc: svc,
+	}
+}
+
+// grpcCodeFromError maps an FFI status error to a gRPC code so the WSD client
+// can translate it back to the right HTTP status. Without this, the WSD HTTP
+// API regresses to 500 for everything when running against a remote KPS.
+func grpcCodeFromError(err error) codes.Code {
+	switch {
+	case errors.Is(err, keymanager.Status_STATUS_NOT_FOUND):
+		return codes.NotFound
+	case errors.Is(err, keymanager.Status_STATUS_INVALID_ARGUMENT),
+		errors.Is(err, keymanager.Status_STATUS_UNSUPPORTED_ALGORITHM),
+		errors.Is(err, keymanager.Status_STATUS_INVALID_KEY):
+		return codes.InvalidArgument
+	case errors.Is(err, keymanager.Status_STATUS_PERMISSION_DENIED):
+		return codes.PermissionDenied
+	case errors.Is(err, keymanager.Status_STATUS_UNAUTHENTICATED):
+		return codes.Unauthenticated
+	case errors.Is(err, keymanager.Status_STATUS_ALREADY_EXISTS):
+		return codes.AlreadyExists
+	default:
+		return codes.Internal
 	}
 }
 
@@ -32,7 +57,7 @@ func (s *grpcServer) GenerateKEMKeypair(ctx context.Context, req *kpspb.Generate
 
 	id, pubKey, err := s.svc.GenerateKEMKeypair(ctx, req.GetAlgo(), req.GetBindingPubKey().GetPublicKey(), req.GetLifespanSecs())
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to generate KEM keypair: %v", err)
+		return nil, status.Errorf(grpcCodeFromError(err), "failed to generate KEM keypair: %v", err)
 	}
 
 	return &kpspb.GenerateKEMKeypairResponse{
@@ -57,7 +82,7 @@ func (s *grpcServer) DecapAndSeal(ctx context.Context, req *kpspb.DecapAndSealRe
 
 	sealEnc, sealedCt, err := s.svc.DecapAndSeal(ctx, kemUUID, req.GetCiphertext().GetCiphertext(), req.GetAad())
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to decap and seal: %v", err)
+		return nil, status.Errorf(grpcCodeFromError(err), "failed to decap and seal: %v", err)
 	}
 
 	return &kpspb.DecapAndSealResponse{
@@ -74,7 +99,7 @@ func (s *grpcServer) EnumerateKEMKeys(ctx context.Context, req *kpspb.EnumerateK
 
 	keys, hasMore, err := s.svc.EnumerateKEMKeys(ctx, int(req.GetLimit()), int(req.GetOffset()))
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to enumerate KEM keys: %v", err)
+		return nil, status.Errorf(grpcCodeFromError(err), "failed to enumerate KEM keys: %v", err)
 	}
 
 	pbKeys := make([]*kpspb.KEMKeyInfo, 0, len(keys))
@@ -105,7 +130,7 @@ func (s *grpcServer) DestroyKEMKey(ctx context.Context, req *kpspb.DestroyKEMKey
 	}
 
 	if err := s.svc.DestroyKEMKey(ctx, kemUUID); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to destroy KEM key: %v", err)
+		return nil, status.Errorf(grpcCodeFromError(err), "failed to destroy KEM key: %v", err)
 	}
 
 	return &kpspb.DestroyKEMKeyResponse{}, nil
@@ -124,7 +149,7 @@ func (s *grpcServer) GetKEMKey(ctx context.Context, req *kpspb.GetKEMKeyRequest)
 
 	kemPubKey, bindingPubKey, algo, lifespan, err := s.svc.GetKEMKey(ctx, kemUUID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get KEM key: %v", err)
+		return nil, status.Errorf(grpcCodeFromError(err), "failed to get KEM key: %v", err)
 	}
 
 	return &kpspb.GetKEMKeyResponse{

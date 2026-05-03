@@ -2,17 +2,22 @@ package workloadservice
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
-	"github.com/google/uuid"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+
+	kpscc "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/key_custody_core"
+	keymanager "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto"
 
 	kps "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service"
 	kpspb "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/proto"
@@ -165,5 +170,90 @@ func TestIntegrationGRPC_EndToEnd(t *testing.T) {
 	destroyResp.Body.Close()
 	if destroyResp.StatusCode != http.StatusNoContent {
 		t.Fatalf("Destroy expected status 204, got %d", destroyResp.StatusCode)
+	}
+}
+
+// stubKPS lets a test inject error returns into the gRPC server.
+type stubKPS struct {
+	destroyErr error
+}
+
+func (s *stubKPS) GenerateKEMKeypair(_ context.Context, _ *keymanager.HpkeAlgorithm, _ []byte, _ uint64) (uuid.UUID, []byte, error) {
+	return uuid.New(), make([]byte, 32), nil
+}
+func (s *stubKPS) DecapAndSeal(_ context.Context, _ uuid.UUID, _, _ []byte) ([]byte, []byte, error) {
+	return nil, nil, nil
+}
+func (s *stubKPS) EnumerateKEMKeys(_ context.Context, _, _ int) ([]kpscc.KEMKeyInfo, bool, error) {
+	return nil, false, nil
+}
+func (s *stubKPS) DestroyKEMKey(_ context.Context, _ uuid.UUID) error {
+	return s.destroyErr
+}
+func (s *stubKPS) GetKEMKey(_ context.Context, _ uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+	return nil, nil, nil, 0, nil
+}
+
+// TestIntegrationGRPC_ErrorCodeRoundTrip verifies that an FFI status error from
+// the KPS backend is mapped to a gRPC code on the wire and back to the matching
+// HTTP status by the WSD adapter — i.e. it does NOT collapse to 500.
+func TestIntegrationGRPC_ErrorCodeRoundTrip(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen on tcp: %v", err)
+	}
+
+	stub := &stubKPS{destroyErr: keymanager.Status_STATUS_NOT_FOUND.ToStatus()}
+	kpsGrpcServer := kps.NewGrpcServer(stub)
+
+	grpcServer := grpc.NewServer()
+	kpspb.RegisterKeyProtectionServiceServer(grpcServer, kpsGrpcServer)
+	go func() { _ = grpcServer.Serve(listener) }()
+	defer grpcServer.Stop()
+
+	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("failed to dial grpc server: %v", err)
+	}
+	defer conn.Close()
+
+	remoteKps := NewRemoteKeyProtectionService(kpspb.NewKeyProtectionServiceClient(conn))
+	mockWsd := &mockWorkloadService{uuid: uuid.New(), pubKey: []byte("thirty-two-bytes-of-dummy-pubkey")}
+	// macOS sockaddr_un caps sun_path at 104 chars; t.TempDir() can exceed that
+	// for tests with long names, so use a short hand-rolled tmp path.
+	sockDir, err := os.MkdirTemp("", "kps-")
+	if err != nil {
+		t.Fatalf("mkdir temp: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(sockDir) })
+	wsdServer, err := NewServer(remoteKps, mockWsd, filepath.Join(sockDir, "s"))
+	if err != nil {
+		t.Fatalf("failed to create wsd server: %v", err)
+	}
+	defer func() {
+		wsdServer.listener.Close()
+		close(wsdServer.claimsChan)
+	}()
+
+	// Pre-populate the WSD's KEM->binding map so handleDestroy reaches KPS instead
+	// of short-circuiting on its own "not found" check (which would mask the bug).
+	kemUUID := uuid.New()
+	wsdServer.mu.Lock()
+	wsdServer.kemToBindingMap[kemUUID] = mockWsd.uuid
+	wsdServer.mu.Unlock()
+
+	ts := httptest.NewServer(wsdServer.Handler())
+	defer ts.Close()
+
+	body := []byte(`{"key_handle": {"handle": "` + kemUUID.String() + `"}}`)
+	resp, err := ts.Client().Post(ts.URL+"/v1/keys:destroy", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("Destroy request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		respBody, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected HTTP 404 (round-tripped from FFI NOT_FOUND), got %d: %s", resp.StatusCode, respBody)
 	}
 }
