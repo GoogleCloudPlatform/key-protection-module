@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -173,52 +174,70 @@ func TestIntegrationGRPC_EndToEnd(t *testing.T) {
 	}
 }
 
-// stubKPS lets a test inject error returns into the gRPC server.
+// stubKPS lets a test inject error returns into the gRPC server, one per RPC.
+// All errors default to nil so a zero-value stub behaves as a successful backend.
 type stubKPS struct {
-	destroyErr error
+	generateErr  error
+	decapErr     error
+	enumerateErr error
+	destroyErr   error
+	getErr       error
 }
 
 func (s *stubKPS) GenerateKEMKeypair(_ context.Context, _ *keymanager.HpkeAlgorithm, _ []byte, _ uint64) (uuid.UUID, []byte, error) {
+	if s.generateErr != nil {
+		return uuid.Nil, nil, s.generateErr
+	}
 	return uuid.New(), make([]byte, 32), nil
 }
 func (s *stubKPS) DecapAndSeal(_ context.Context, _ uuid.UUID, _, _ []byte) ([]byte, []byte, error) {
+	if s.decapErr != nil {
+		return nil, nil, s.decapErr
+	}
 	return nil, nil, nil
 }
 func (s *stubKPS) EnumerateKEMKeys(_ context.Context, _, _ int) ([]kpscc.KEMKeyInfo, bool, error) {
+	if s.enumerateErr != nil {
+		return nil, false, s.enumerateErr
+	}
 	return nil, false, nil
 }
 func (s *stubKPS) DestroyKEMKey(_ context.Context, _ uuid.UUID) error {
 	return s.destroyErr
 }
 func (s *stubKPS) GetKEMKey(_ context.Context, _ uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+	if s.getErr != nil {
+		return nil, nil, nil, 0, s.getErr
+	}
 	return nil, nil, nil, 0, nil
 }
 
-// TestIntegrationGRPC_ErrorCodeRoundTrip verifies that an FFI status error from
-// the KPS backend is mapped to a gRPC code on the wire and back to the matching
-// HTTP status by the WSD adapter — i.e. it does NOT collapse to 500.
-func TestIntegrationGRPC_ErrorCodeRoundTrip(t *testing.T) {
+// setupGRPCRoundTrip wires a stub KPS backend → gRPC server → gRPC client → WSD HTTP server
+// and returns the test HTTP server. If kemUUID is non-zero, the WSD's
+// kemToBindingMap is pre-populated so handlers reach KPS instead of
+// short-circuiting on their own "not found" check.
+func setupGRPCRoundTrip(t *testing.T, stub kps.KeyProtectionService, kemUUID uuid.UUID) *httptest.Server {
+	t.Helper()
+
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("failed to listen on tcp: %v", err)
 	}
 
-	stub := &stubKPS{destroyErr: keymanager.Status_STATUS_NOT_FOUND.ToStatus()}
-	kpsGrpcServer := kps.NewGrpcServer(stub)
-
 	grpcServer := grpc.NewServer()
-	kpspb.RegisterKeyProtectionServiceServer(grpcServer, kpsGrpcServer)
+	kpspb.RegisterKeyProtectionServiceServer(grpcServer, kps.NewGrpcServer(stub))
 	go func() { _ = grpcServer.Serve(listener) }()
-	defer grpcServer.Stop()
+	t.Cleanup(grpcServer.Stop)
 
 	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatalf("failed to dial grpc server: %v", err)
 	}
-	defer conn.Close()
+	t.Cleanup(func() { conn.Close() })
 
 	remoteKps := NewRemoteKeyProtectionService(kpspb.NewKeyProtectionServiceClient(conn))
 	mockWsd := &mockWorkloadService{uuid: uuid.New(), pubKey: []byte("thirty-two-bytes-of-dummy-pubkey")}
+
 	// macOS sockaddr_un caps sun_path at 104 chars; t.TempDir() can exceed that
 	// for tests with long names, so use a short hand-rolled tmp path.
 	sockDir, err := os.MkdirTemp("", "kps-")
@@ -226,34 +245,207 @@ func TestIntegrationGRPC_ErrorCodeRoundTrip(t *testing.T) {
 		t.Fatalf("mkdir temp: %v", err)
 	}
 	t.Cleanup(func() { os.RemoveAll(sockDir) })
+
 	wsdServer, err := NewServer(remoteKps, mockWsd, filepath.Join(sockDir, "s"))
 	if err != nil {
 		t.Fatalf("failed to create wsd server: %v", err)
 	}
-	defer func() {
+	t.Cleanup(func() {
 		wsdServer.listener.Close()
 		close(wsdServer.claimsChan)
-	}()
+	})
 
-	// Pre-populate the WSD's KEM->binding map so handleDestroy reaches KPS instead
-	// of short-circuiting on its own "not found" check (which would mask the bug).
-	kemUUID := uuid.New()
-	wsdServer.mu.Lock()
-	wsdServer.kemToBindingMap[kemUUID] = mockWsd.uuid
-	wsdServer.mu.Unlock()
+	if kemUUID != uuid.Nil {
+		wsdServer.mu.Lock()
+		wsdServer.kemToBindingMap[kemUUID] = mockWsd.uuid
+		wsdServer.mu.Unlock()
+	}
 
 	ts := httptest.NewServer(wsdServer.Handler())
-	defer ts.Close()
+	t.Cleanup(ts.Close)
+	return ts
+}
 
-	body := []byte(`{"key_handle": {"handle": "` + kemUUID.String() + `"}}`)
-	resp, err := ts.Client().Post(ts.URL+"/v1/keys:destroy", "application/json", bytes.NewReader(body))
-	if err != nil {
-		t.Fatalf("Destroy request failed: %v", err)
+// TestIntegrationGRPC_ErrorCodeRoundTrip verifies that FFI status errors from
+// the KPS backend are mapped to a gRPC code on the wire and back to the
+// matching HTTP status by the WSD adapter — i.e. they do NOT collapse to 500.
+// Covers the four RPCs reachable from the WSD HTTP API and a representative
+// sampling of FFI status codes.
+func TestIntegrationGRPC_ErrorCodeRoundTrip(t *testing.T) {
+	kemUUID := uuid.New()
+	destroyBody := `{"key_handle": {"handle": "` + kemUUID.String() + `"}}`
+	decapBody := `{"key_handle": {"handle": "` + kemUUID.String() + `"}, ` +
+		`"ciphertext": {"algorithm": "KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256", ` +
+		`"ciphertext": "ZmFrZS1jaXBoZXJ0ZXh0LWxvbmctZW5vdWdo"}}`
+	generateBody := `{"algorithm":{"type":"kem","params":` +
+		`{"kemId":"KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256"}},"lifespan":3600}`
+
+	cases := []struct {
+		name           string
+		stub           stubKPS
+		method, path   string
+		body           string
+		wantHTTPStatus int
+	}{
+		{
+			name:           "destroy_not_found_to_404",
+			stub:           stubKPS{destroyErr: keymanager.Status_STATUS_NOT_FOUND.ToStatus()},
+			method:         http.MethodPost,
+			path:           "/v1/keys:destroy",
+			body:           destroyBody,
+			wantHTTPStatus: http.StatusNotFound,
+		},
+		{
+			name:           "destroy_invalid_argument_to_400",
+			stub:           stubKPS{destroyErr: keymanager.Status_STATUS_INVALID_ARGUMENT.ToStatus()},
+			method:         http.MethodPost,
+			path:           "/v1/keys:destroy",
+			body:           destroyBody,
+			wantHTTPStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "destroy_permission_denied_to_403",
+			stub:           stubKPS{destroyErr: keymanager.Status_STATUS_PERMISSION_DENIED.ToStatus()},
+			method:         http.MethodPost,
+			path:           "/v1/keys:destroy",
+			body:           destroyBody,
+			wantHTTPStatus: http.StatusForbidden,
+		},
+		{
+			name:           "destroy_unauthenticated_to_401",
+			stub:           stubKPS{destroyErr: keymanager.Status_STATUS_UNAUTHENTICATED.ToStatus()},
+			method:         http.MethodPost,
+			path:           "/v1/keys:destroy",
+			body:           destroyBody,
+			wantHTTPStatus: http.StatusUnauthorized,
+		},
+		{
+			name:           "destroy_already_exists_to_409",
+			stub:           stubKPS{destroyErr: keymanager.Status_STATUS_ALREADY_EXISTS.ToStatus()},
+			method:         http.MethodPost,
+			path:           "/v1/keys:destroy",
+			body:           destroyBody,
+			wantHTTPStatus: http.StatusConflict,
+		},
+		{
+			name:           "destroy_crypto_error_to_500",
+			stub:           stubKPS{destroyErr: keymanager.Status_STATUS_CRYPTO_ERROR.ToStatus()},
+			method:         http.MethodPost,
+			path:           "/v1/keys:destroy",
+			body:           destroyBody,
+			wantHTTPStatus: http.StatusInternalServerError,
+		},
+		{
+			name:           "decap_not_found_to_404",
+			stub:           stubKPS{decapErr: keymanager.Status_STATUS_NOT_FOUND.ToStatus()},
+			method:         http.MethodPost,
+			path:           "/v1/keys:decap",
+			body:           decapBody,
+			wantHTTPStatus: http.StatusNotFound,
+		},
+		{
+			name:           "decap_invalid_key_to_400",
+			stub:           stubKPS{decapErr: keymanager.Status_STATUS_INVALID_KEY.ToStatus()},
+			method:         http.MethodPost,
+			path:           "/v1/keys:decap",
+			body:           decapBody,
+			wantHTTPStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "enumerate_invalid_argument_to_400",
+			stub:           stubKPS{enumerateErr: keymanager.Status_STATUS_INVALID_ARGUMENT.ToStatus()},
+			method:         http.MethodGet,
+			path:           "/v1/keys",
+			body:           "",
+			wantHTTPStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "generate_unsupported_algorithm_to_400",
+			stub:           stubKPS{generateErr: keymanager.Status_STATUS_UNSUPPORTED_ALGORITHM.ToStatus()},
+			method:         http.MethodPost,
+			path:           "/v1/keys:generate_key",
+			body:           generateBody,
+			wantHTTPStatus: http.StatusBadRequest,
+		},
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusNotFound {
-		respBody, _ := io.ReadAll(resp.Body)
-		t.Fatalf("expected HTTP 404 (round-tripped from FFI NOT_FOUND), got %d: %s", resp.StatusCode, respBody)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			stub := tc.stub
+			ts := setupGRPCRoundTrip(t, &stub, kemUUID)
+
+			req, err := http.NewRequest(tc.method, ts.URL+tc.path, strings.NewReader(tc.body))
+			if err != nil {
+				t.Fatalf("NewRequest: %v", err)
+			}
+			if tc.body != "" {
+				req.Header.Set("Content-Type", "application/json")
+			}
+			resp, err := ts.Client().Do(req)
+			if err != nil {
+				t.Fatalf("request failed: %v", err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != tc.wantHTTPStatus {
+				respBody, _ := io.ReadAll(resp.Body)
+				t.Fatalf("got HTTP %d, want %d: %s", resp.StatusCode, tc.wantHTTPStatus, respBody)
+			}
+		})
+	}
+}
+
+// fakeKPSClient is a hand-rolled kpspb.KeyProtectionServiceClient that lets a
+// test return an arbitrary GenerateKEMKeypair response — including malformed
+// payloads (e.g. non-UUID handles) that a real server wouldn't produce, but
+// that the client adapter must still defend against.
+type fakeKPSClient struct {
+	generateResp *kpspb.GenerateKEMKeypairResponse
+	generateErr  error
+}
+
+func (f *fakeKPSClient) GenerateKEMKeypair(_ context.Context, _ *kpspb.GenerateKEMKeypairRequest, _ ...grpc.CallOption) (*kpspb.GenerateKEMKeypairResponse, error) {
+	return f.generateResp, f.generateErr
+}
+func (f *fakeKPSClient) DecapAndSeal(context.Context, *kpspb.DecapAndSealRequest, ...grpc.CallOption) (*kpspb.DecapAndSealResponse, error) {
+	return nil, nil
+}
+func (f *fakeKPSClient) EnumerateKEMKeys(context.Context, *kpspb.EnumerateKEMKeysRequest, ...grpc.CallOption) (*kpspb.EnumerateKEMKeysResponse, error) {
+	return nil, nil
+}
+func (f *fakeKPSClient) DestroyKEMKey(context.Context, *kpspb.DestroyKEMKeyRequest, ...grpc.CallOption) (*kpspb.DestroyKEMKeyResponse, error) {
+	return nil, nil
+}
+func (f *fakeKPSClient) GetKEMKey(context.Context, *kpspb.GetKEMKeyRequest, ...grpc.CallOption) (*kpspb.GetKEMKeyResponse, error) {
+	return nil, nil
+}
+
+// TestRemoteKeyProtectionService_GenerateKEMKeypair_BadHandle verifies that the
+// WSD client adapter rejects a malformed (non-UUID) key handle returned by a
+// misbehaving KPS instead of propagating uuid.Nil silently.
+func TestRemoteKeyProtectionService_GenerateKEMKeypair_BadHandle(t *testing.T) {
+	fake := &fakeKPSClient{
+		generateResp: &kpspb.GenerateKEMKeypairResponse{
+			KeyHandle: &keymanager.KeyHandle{Handle: "not-a-valid-uuid"},
+			KemPubKey: &keymanager.KemPublicKey{
+				Algorithm: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+				PublicKey: make([]byte, 32),
+			},
+		},
+	}
+
+	remote := NewRemoteKeyProtectionService(fake)
+	id, pubKey, err := remote.GenerateKEMKeypair(context.Background(),
+		&keymanager.HpkeAlgorithm{Kem: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256},
+		make([]byte, 32), 3600)
+
+	if err == nil {
+		t.Fatalf("expected error for malformed handle, got nil (id=%s, pubKey=%v)", id, pubKey)
+	}
+	if !strings.Contains(err.Error(), "invalid KEM key handle from server") {
+		t.Errorf("expected wrapped 'invalid KEM key handle from server' error, got: %v", err)
+	}
+	if id != uuid.Nil {
+		t.Errorf("expected uuid.Nil on error, got %s", id)
 	}
 }
