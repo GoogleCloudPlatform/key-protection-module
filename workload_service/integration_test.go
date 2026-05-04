@@ -11,13 +11,12 @@ import (
 	"testing"
 	"time"
 
-	api "github.com/GoogleCloudPlatform/key-protection-module/workload_service/proto"
-	"github.com/google/uuid"
-	"google.golang.org/protobuf/encoding/protojson"
-
 	kps "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service"
 	keymanager "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto"
 	wskcc "github.com/GoogleCloudPlatform/key-protection-module/workload_service/key_custody_core"
+	api "github.com/GoogleCloudPlatform/key-protection-module/workload_service/proto"
+	"github.com/google/uuid"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 const expirationToleranceSecs = 5.0
@@ -168,7 +167,7 @@ func TestIntegrationDestroyKey(t *testing.T) {
 	if err := json.NewDecoder(wGen.Body).Decode(&respGen); err != nil {
 		t.Fatalf("setup: failed to decode generate response: %v", err)
 	}
-	kemHandle := respGen.KeyHandle.Handle
+	kemHandle := respGen.KeyHandle.GetHandle()
 	kemUUID, err := uuid.Parse(kemHandle)
 	if err != nil {
 		t.Fatalf("setup: invalid KEM UUID: %v", err)
@@ -234,7 +233,7 @@ func TestIntegrationAutoDestroy(t *testing.T) {
 
 	var respGen api.GenerateKeyResponse
 	json.NewDecoder(wGen.Body).Decode(&respGen)
-	kemHandle := respGen.KeyHandle.Handle
+	kemHandle := respGen.KeyHandle.GetHandle()
 
 	// Wait for auto-destroy
 	time.Sleep(2 * time.Second)
