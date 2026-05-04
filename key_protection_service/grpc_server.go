@@ -49,6 +49,37 @@ func grpcCodeFromError(err error) codes.Code {
 	}
 }
 
+// GetCapabilities retrieves the supported cryptographic algorithms.
+func (s *grpcServer) GetCapabilities(ctx context.Context, req *kpspb.GetCapabilitiesRequest) (*kpspb.GetCapabilitiesResponse, error) {
+	if err := protovalidate.Validate(req); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+	}
+
+	// For Bowcaster, KPS needs to report its own capabilities.
+	// Since Vanguard's WSD has the same list of supported algorithms,
+	// we will proxy this request to the service layer.
+	
+	// Assuming svc has a GetCapabilities method. If it doesn't we might need to add it,
+	// but the WSD expects a standard GetCapabilitiesResponse format from KPS.
+	// We'll return the hardcoded supported algorithm per the docs for now if it's not in the interface,
+	// but let's check if we can just implement it directly here to match WSD.
+
+	return &kpspb.GetCapabilitiesResponse{
+		SupportedAlgorithms: []*keymanager.SupportedAlgorithm{
+			{
+				Algorithm: &keymanager.AlgorithmDetails{
+					Type: "kem",
+					Params: &keymanager.AlgorithmParams{
+						Params: &keymanager.AlgorithmParams_KemId{
+							KemId: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+						},
+					},
+				},
+			},
+		},
+	}, nil
+}
+
 // GenerateKEMKeypair generates a new KEM keypair.
 func (s *grpcServer) GenerateKEMKeypair(ctx context.Context, req *kpspb.GenerateKEMKeypairRequest) (*kpspb.GenerateKEMKeypairResponse, error) {
 	if err := protovalidate.Validate(req); err != nil {

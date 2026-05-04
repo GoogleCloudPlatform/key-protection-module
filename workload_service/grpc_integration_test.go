@@ -404,6 +404,10 @@ type fakeKPSClient struct {
 	generateErr  error
 }
 
+func (f *fakeKPSClient) GetCapabilities(ctx context.Context, in *kpspb.GetCapabilitiesRequest, opts ...grpc.CallOption) (*kpspb.GetCapabilitiesResponse, error) {
+	return nil, nil
+}
+
 func (f *fakeKPSClient) GenerateKEMKeypair(_ context.Context, _ *kpspb.GenerateKEMKeypairRequest, _ ...grpc.CallOption) (*kpspb.GenerateKEMKeypairResponse, error) {
 	return f.generateResp, f.generateErr
 }
