@@ -17,7 +17,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	kpscc "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/key_custody_core"
+	kpskcc "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/key_custody_core"
 	keymanager "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto"
 
 	kps "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service"
@@ -196,7 +196,7 @@ func (s *stubKPS) DecapAndSeal(_ context.Context, _ uuid.UUID, _, _ []byte) ([]b
 	}
 	return nil, nil, nil
 }
-func (s *stubKPS) EnumerateKEMKeys(_ context.Context, _, _ int) ([]kpscc.KEMKeyInfo, bool, error) {
+func (s *stubKPS) EnumerateKEMKeys(_ context.Context, _, _ int) ([]kpskcc.KEMKeyInfo, bool, error) {
 	if s.enumerateErr != nil {
 		return nil, false, s.enumerateErr
 	}

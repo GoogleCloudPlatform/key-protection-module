@@ -25,7 +25,7 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/durationpb"
 
-	kpscc "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/key_custody_core"
+	kpskcc "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/key_custody_core"
 	kpspb "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/proto"
 	keymanager "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto"
 	wskcc "github.com/GoogleCloudPlatform/key-protection-module/workload_service/key_custody_core"
@@ -93,7 +93,7 @@ type keyProtectionService struct{}
 // KeyProtectionService defines the interface for generating KEM keypairs.
 type KeyProtectionService interface {
 	GenerateKEMKeypair(ctx context.Context, algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
-	EnumerateKEMKeys(ctx context.Context, limit, offset int) ([]kpscc.KEMKeyInfo, bool, error)
+	EnumerateKEMKeys(ctx context.Context, limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error)
 	DestroyKEMKey(ctx context.Context, kemUUID uuid.UUID) error
 	GetKEMKey(ctx context.Context, id uuid.UUID) (kemPubKey []byte, bindingPubKey []byte, algo *keymanager.HpkeAlgorithm, deleteAfter uint64, err error)
 	DecapAndSeal(ctx context.Context, kemUUID uuid.UUID, encapsulatedKey, aad []byte) (sealEnc []byte, sealedCT []byte, err error)
@@ -127,23 +127,23 @@ func (r *workloadService) GetBindingKey(id uuid.UUID) ([]byte, *keymanager.HpkeA
 }
 
 func (r *keyProtectionService) GenerateKEMKeypair(ctx context.Context, algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
-	return kpscc.GenerateKEMKeypair(algo, bindingPubKey, lifespanSecs)
+	return kpskcc.GenerateKEMKeypair(algo, bindingPubKey, lifespanSecs)
 }
 
-func (r *keyProtectionService) EnumerateKEMKeys(ctx context.Context, limit, offset int) ([]kpscc.KEMKeyInfo, bool, error) {
-	return kpscc.EnumerateKEMKeys(limit, offset)
+func (r *keyProtectionService) EnumerateKEMKeys(ctx context.Context, limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
+	return kpskcc.EnumerateKEMKeys(limit, offset)
 }
 
 func (r *keyProtectionService) DestroyKEMKey(ctx context.Context, kemUUID uuid.UUID) error {
-	return kpscc.DestroyKEMKey(kemUUID)
+	return kpskcc.DestroyKEMKey(kemUUID)
 }
 
 func (r *keyProtectionService) DecapAndSeal(ctx context.Context, kemUUID uuid.UUID, encapsulatedKey, aad []byte) (sealEnc []byte, sealedCT []byte, err error) {
-	return kpscc.DecapAndSeal(kemUUID, encapsulatedKey, aad)
+	return kpskcc.DecapAndSeal(kemUUID, encapsulatedKey, aad)
 }
 
 func (r *keyProtectionService) GetKEMKey(ctx context.Context, id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
-	return kpscc.GetKEMKey(id)
+	return kpskcc.GetKEMKey(id)
 }
 
 type remoteKeyProtectionService struct {
@@ -207,7 +207,7 @@ func (r *remoteKeyProtectionService) GenerateKEMKeypair(ctx context.Context, alg
 	return id, resp.GetKemPubKey().GetPublicKey(), nil
 }
 
-func (r *remoteKeyProtectionService) EnumerateKEMKeys(ctx context.Context, limit, offset int) ([]kpscc.KEMKeyInfo, bool, error) {
+func (r *remoteKeyProtectionService) EnumerateKEMKeys(ctx context.Context, limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
 	req := &kpspb.EnumerateKEMKeysRequest{
 		Limit:  int32(limit),
 		Offset: int32(offset),
@@ -217,14 +217,14 @@ func (r *remoteKeyProtectionService) EnumerateKEMKeys(ctx context.Context, limit
 		return nil, false, ffiStatusFromGrpcError(err)
 	}
 
-	keys := make([]kpscc.KEMKeyInfo, 0, len(resp.GetKeys()))
+	keys := make([]kpskcc.KEMKeyInfo, 0, len(resp.GetKeys()))
 	for _, k := range resp.GetKeys() {
 		handle := k.GetKeyHandle().GetHandle()
 		id, err := uuid.Parse(handle)
 		if err != nil {
 			return nil, false, fmt.Errorf("invalid key handle %q from server: %w", handle, err)
 		}
-		keys = append(keys, kpscc.KEMKeyInfo{
+		keys = append(keys, kpskcc.KEMKeyInfo{
 			ID:                    id,
 			Algorithm:             k.GetAlgorithm(),
 			KEMPubKey:             k.GetKemPubKey(),
@@ -312,13 +312,29 @@ var (
 )
 
 // New creates a new WSD Server listening on the given unix socket path.
-func New(_ context.Context, socketPath string, mode keymanager.KeyProtectionMechanism) (*Server, error) {
+func New(_ context.Context, socketPath string, mode keymanager.KeyProtectionMechanism, kpsVMIP string) (*Server, error) {
 	var kps KeyProtectionService
 	switch mode {
 	case keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED:
 		kps = &keyProtectionService{}
+	// TODO: The `main` package to host the standalone gRPC server for the
+	// KPS VM is not yet implemented. This will be added in a follow-up PR
+	// as part of the containerization effort. Until then, RPCs
+	// in this mode will fail because nothing is listening.
 	case keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM:
-		conn, err := grpc.NewClient("localhost:50051", grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if kpsVMIP == "" {
+			return nil, fmt.Errorf("KPS VM IP must be provided when using KEY_PROTECTION_VM mode")
+		}
+		target := fmt.Sprintf("%s:50051", kpsVMIP)
+
+		// Note on Transport Security:
+		// We use insecure.NewCredentials() here because transport-layer confidentiality
+		// and integrity are explicitly NOT part of the threat model for this channel.
+		// All sensitive material passed over this gRPC connection is application-layer
+		// encrypted (HPKE-sealed) using the WSD's Binding Key. Additionally, KPS/WSD
+		// authentication is guaranteed out-of-band by the hardware CVM attestation
+		// quotes generated by each VM.
+		conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			return nil, fmt.Errorf("failed to dial KPS: %w", err)
 		}
