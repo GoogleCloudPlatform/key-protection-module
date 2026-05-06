@@ -15,7 +15,7 @@ func TestRunWSD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	socketPath := filepath.Join(tmpDir, "wsd.sock")
 
@@ -110,14 +110,22 @@ func TestParseEnvEnum(t *testing.T) {
 	defaultValue := keymanager.ServiceRole_WSD
 
 	// Test default value
-	os.Unsetenv(key)
+	if err := os.Unsetenv(key); err != nil {
+		t.Fatalf("Failed to unsetenv: %v", err)
+	}
 	if val := parseEnvEnum(key, defaultValue, enumMap); val != defaultValue {
 		t.Errorf("parseEnvEnum() = %v, want %v", val, defaultValue)
 	}
 
 	// Test valid value
-	os.Setenv(key, "VALUE2")
-	defer os.Unsetenv(key)
+	if err := os.Setenv(key, "VALUE2"); err != nil {
+		t.Fatalf("Failed to setenv: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv(key); err != nil {
+			t.Errorf("Failed to unsetenv in defer: %v", err)
+		}
+	}()
 	expected := keymanager.ServiceRole(2)
 	if val := parseEnvEnum(key, defaultValue, enumMap); val != expected {
 		t.Errorf("parseEnvEnum() = %v, want %v", val, expected)
