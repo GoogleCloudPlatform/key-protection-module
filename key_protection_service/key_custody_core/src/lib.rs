@@ -61,7 +61,6 @@ fn generate_kem_keypair_internal(
 /// * `Status::InvalidArgument` if `binding_pubkey` or `algo_ptr` is null/empty.
 /// * `Status::InvalidArgument` if the `out_pubkey` buffer size does not match the key size.
 /// * Other `Status` values on failure.
-
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn key_manager_generate_kem_keypair(
     algo_ptr: *const u8,
@@ -209,7 +208,7 @@ fn enumerate_kem_keys_internal(
     let count = metas.len();
     let has_more = offset + count < total_count;
 
-    for (entry, meta) in entries.iter_mut().zip(metas.into_iter()) {
+    for (entry, meta) in entries.iter_mut().zip(metas) {
         let KeySpec::KemWithBindingPub {
             algo,
             kem_public_key: pub_key,
@@ -263,6 +262,9 @@ fn enumerate_kem_keys_internal(
     Ok((count, has_more))
 }
 
+/// # Safety
+/// * `out_entries` must be a valid pointer to an array of `KpsKeyInfo` of length `max_entries`.
+/// * If `out_has_more` is provided, it must be a valid reference.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn key_manager_enumerate_kem_keys(
     out_entries: *mut KpsKeyInfo,
@@ -377,7 +379,7 @@ fn get_kem_key_internal(uuid: Uuid) -> Result<(HpkeAlgorithm, PublicKey, PublicK
                 .delete_after
                 .saturating_duration_since(std::time::Instant::now());
             Ok((
-                algo.clone(),
+                *algo,
                 kem_public_key.clone(),
                 binding_public_key.clone(),
                 remaining.as_secs(),

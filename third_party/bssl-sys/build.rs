@@ -179,7 +179,7 @@ fn main() {
 
     let bindgen_out_file = Path::new(&out_dir).join("bindgen.rs");
 
-    let bindgen_source = std::fs::read_to_string(&bindgen_source_file).expect(&format!(
+    let bindgen_source = std::fs::read_to_string(&bindgen_source_file).unwrap_or_else(|_| panic!(
         "Could not read bindings from '{}'. Did the build fail?",
         bindgen_source_file.display(),
     ));
@@ -188,7 +188,7 @@ fn main() {
 
     let prefix_source = match env::var("BORINGSSL_PREFIX") {
         Ok(prefix) => std::fs::read_to_string(&prefix_inc_source_file)
-            .expect(&format!(
+            .unwrap_or_else(|_| panic!(
                 "Could not read prefixing data from '{}'",
                 prefix_inc_source_file.display(),
             ))
@@ -201,7 +201,7 @@ fn main() {
         &bindgen_out_file,
         format!("{}{}", bindgen_source, prefix_source),
     )
-    .expect(&format!(
+    .unwrap_or_else(|_| panic!(
         "Could not write bindings to '{}'",
         bindgen_out_file.display()
     ));
