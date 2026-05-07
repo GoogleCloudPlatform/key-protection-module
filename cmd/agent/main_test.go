@@ -55,12 +55,19 @@ func TestRunWSD(t *testing.T) {
 }
 
 func TestRunWSD_InvalidSocketPath(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
 
-	// Use an impossible path to trigger an error
-	socketPath := "/nonexistent/path/wsd.sock"
+	// Create a file so that MkdirAll will fail when trying to use it as a directory
+	tmpFile, err := os.CreateTemp("", "not-a-dir")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
 
-	err := runWSD(ctx, socketPath, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
+	socketPath := filepath.Join(tmpFile.Name(), "wsd.sock")
+
+	err = runWSD(ctx, socketPath, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
 	if err == nil {
 		t.Fatal("Expected runWSD() to return an error for invalid socket path")
 	}
