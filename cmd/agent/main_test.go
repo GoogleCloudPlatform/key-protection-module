@@ -2,12 +2,20 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	keymanager "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto"
+)
+
+const (
+	pollAttempts = 50
+	pollInterval = 100 * time.Millisecond
+	testTimeout  = 5 * time.Second
 )
 
 func TestRunWSD(t *testing.T) {
@@ -28,12 +36,12 @@ func TestRunWSD(t *testing.T) {
 
 	// Wait for the socket file to be created to ensure the server has started
 	started := false
-	for i := 0; i < 50; i++ {
+	for range pollAttempts {
 		if _, err := os.Stat(socketPath); err == nil {
 			started = true
 			break
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(pollInterval)
 	}
 
 	if !started {
@@ -49,7 +57,7 @@ func TestRunWSD(t *testing.T) {
 		if err != nil {
 			t.Errorf("runWSD() returned an unexpected error: %v", err)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(testTimeout):
 		t.Fatal("runWSD() did not shut down cleanly in time")
 	}
 }
@@ -76,13 +84,35 @@ func TestRunWSD_InvalidSocketPath(t *testing.T) {
 func TestRunKPS(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
+	// Pick an available port
+	ln, err := net.Listen("tcp", ":0")
+	if err != nil {
+		t.Fatalf("Failed to pick an available port: %v", err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	_ = ln.Close()
+
 	errChan := make(chan error, 1)
 	go func() {
-		errChan <- runKPS(ctx, 0) // Let OS pick an available port
+		errChan <- runKPS(ctx, port)
 	}()
 
-	// Give the server a moment to start
-	time.Sleep(200 * time.Millisecond)
+	// Wait for the server to start by polling the port
+	addr := fmt.Sprintf(":%d", port)
+	started := false
+	for range pollAttempts {
+		conn, err := net.Dial("tcp", addr)
+		if err == nil {
+			_ = conn.Close()
+			started = true
+			break
+		}
+		time.Sleep(pollInterval)
+	}
+
+	if !started {
+		t.Fatalf("KPS server did not start on port %d in time", port)
+	}
 
 	// Trigger clean shutdown
 	cancel()
@@ -93,7 +123,7 @@ func TestRunKPS(t *testing.T) {
 		if err != nil {
 			t.Errorf("runKPS() returned an unexpected error: %v", err)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(testTimeout):
 		t.Fatal("runKPS() did not shut down cleanly in time")
 	}
 }
