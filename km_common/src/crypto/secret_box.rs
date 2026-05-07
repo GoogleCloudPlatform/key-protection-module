@@ -10,8 +10,17 @@ pub struct SecretBox(Box<[u8]>);
 
 impl SecretBox {
     /// Creates a new `SecretBox` from a `Vec<u8>`.
-    pub fn new(data: Vec<u8>) -> Self {
-        Self(data.into_boxed_slice())
+    /// If the `Vec<u8>` has extra capacity, a new `Vec<u8>` with the exact size
+    /// is created and the original `Vec<u8>` is zeroized to prevent leaking the data.
+    pub fn new(mut data: Vec<u8>) -> Self {
+        if data.capacity() > data.len() {
+            let mut exact_target = Vec::with_capacity(data.len());
+            exact_target.extend_from_slice(&data);
+            data.zeroize();
+            Self(exact_target.into_boxed_slice())
+        } else {
+            Self(data.into_boxed_slice())
+        }
     }
 
     /// Returns a reference to the inner slice.
