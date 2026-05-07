@@ -29,3 +29,8 @@ func DestroyBindingKey(_ uuid.UUID) error {
 func GetBindingKey(id uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
 	return nil, nil, fmt.Errorf("GetBindingKey is not supported on this architecture")
 }
+
+// DestroyAllKeys is a stub for architectures where the Rust library is not supported.
+func DestroyAllKeys() error {
+	return fmt.Errorf("DestroyAllKeys is not supported on this architecture")
+}
