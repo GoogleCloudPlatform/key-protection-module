@@ -246,7 +246,9 @@ func customHTTPErrorHandler(_ context.Context, _ *runtime.ServeMux, _ runtime.Ma
 	st := status.Convert(err)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(runtime.HTTPStatusFromCode(st.Code()))
-	json.NewEncoder(w).Encode(map[string]string{"error": st.Message()})
+	if err := json.NewEncoder(w).Encode(map[string]string{"error": st.Message()}); err != nil {
+		log.Printf("Warning: failed to encode error response: %v", err)
+	}
 }
 
 func customResponseModifier(_ context.Context, w http.ResponseWriter, resp proto.Message) error {

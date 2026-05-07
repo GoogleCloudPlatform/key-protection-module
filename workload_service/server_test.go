@@ -31,7 +31,9 @@ func newTestServer(t *testing.T, kemGen kps.KeyProtectionService, bindingGen Wor
 		t.Fatalf("failed to create test server: %v", err)
 	}
 	t.Cleanup(func() {
-		srv.Shutdown(context.Background())
+		if err := srv.Shutdown(context.Background()); err != nil {
+			t.Logf("failed to shutdown server: %v", err)
+		}
 	})
 	return srv
 }
@@ -652,7 +654,11 @@ func TestHandleEnumerateKeysWithKeys(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to dial gRPC server: %v", err)
 		}
-		defer conn.Close()
+		defer func() {
+			if err := conn.Close(); err != nil {
+				t.Logf("failed to close gRPC connection: %v", err)
+			}
+		}()
 
 		client := api.NewWorkloadServiceClient(conn)
 		resp, err := client.EnumerateKeys(context.Background(), &api.EnumerateKeysRequest{})
@@ -802,7 +808,11 @@ func TestHandleGetCapabilities(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to dial gRPC daemon: %v", err)
 		}
-		defer conn.Close()
+		defer func() {
+			if err := conn.Close(); err != nil {
+				t.Logf("failed to close gRPC connection: %v", err)
+			}
+		}()
 
 		client := api.NewWorkloadServiceClient(conn)
 		resp, err := client.GetCapabilities(context.Background(), &api.GetCapabilitiesRequest{})
@@ -1189,7 +1199,11 @@ func TestHandleDestroyGRPC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to dial gRPC server: %v", err)
 	}
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			t.Logf("failed to close gRPC connection: %v", err)
+		}
+	}()
 
 	client := api.NewWorkloadServiceClient(conn)
 	_, err = client.Destroy(context.Background(), &api.DestroyRequest{
@@ -1290,7 +1304,11 @@ func TestHandleDecapsSuccess(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to dial gRPC server: %v", err)
 		}
-		defer conn.Close()
+		defer func() {
+			if err := conn.Close(); err != nil {
+				t.Logf("failed to close gRPC connection: %v", err)
+			}
+		}()
 
 		client := api.NewWorkloadServiceClient(conn)
 		resp, err := client.Decaps(context.Background(), &api.DecapsRequest{
