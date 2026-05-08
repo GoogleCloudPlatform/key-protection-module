@@ -30,7 +30,7 @@ func newTestServer(t *testing.T, kemGen kps.KeyProtectionService, bindingGen Wor
 		t.Fatalf("failed to create test server: %v", err)
 	}
 	t.Cleanup(func() {
-		srv.listener.Close()
+		_ = srv.listener.Close()
 		close(srv.claimsChan)
 	})
 	return srv

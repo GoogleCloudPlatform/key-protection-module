@@ -1,5 +1,5 @@
 use crate::crypto;
-use crate::crypto::{secret_box, PublicKey};
+use crate::crypto::{PublicKey, secret_box};
 use crate::protected_mem::Vault;
 use crate::proto::{AeadAlgorithm, HpkeAlgorithm, KdfAlgorithm, KemAlgorithm};
 use std::collections::HashMap;
@@ -86,14 +86,16 @@ impl KeyRegistry {
         stop_signal: Arc<std::sync::atomic::AtomicBool>,
     ) -> std::thread::JoinHandle<()> {
         let keys_clone = Arc::clone(&self.keys);
-        std::thread::spawn(move || loop {
-            std::thread::sleep(Duration::from_secs(REAPER_INTERVAL_SECS));
-            if stop_signal.load(std::sync::atomic::Ordering::Relaxed) {
-                break;
-            }
-            let now = Instant::now();
-            if let Ok(mut keys) = keys_clone.write() {
-                keys.retain(|_, key| key.meta.delete_after > now);
+        std::thread::spawn(move || {
+            loop {
+                std::thread::sleep(Duration::from_secs(REAPER_INTERVAL_SECS));
+                if stop_signal.load(std::sync::atomic::Ordering::Relaxed) {
+                    break;
+                }
+                let now = Instant::now();
+                if let Ok(mut keys) = keys_clone.write() {
+                    keys.retain(|_, key| key.meta.delete_after > now);
+                }
             }
         })
     }
@@ -134,7 +136,10 @@ impl KeyRecord {
     }
 
     /// Creates a new long-term Binding key.
-    pub fn create_binding_key(algo: HpkeAlgorithm, expiry: Duration) -> Result<Self, crate::Status> {
+    pub fn create_binding_key(
+        algo: HpkeAlgorithm,
+        expiry: Duration,
+    ) -> Result<Self, crate::Status> {
         Self::create_key_internal(algo, expiry, |algo, pub_key| KeySpec::Binding {
             algo,
             binding_public_key: pub_key,
