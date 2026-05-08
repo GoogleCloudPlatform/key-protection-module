@@ -1,78 +1,88 @@
-# Key Protection Module
+# Key Protection Module (KPM)
 
-This repository contains the Key Protection Module.
+The Key Protection Module (KPM) provides a secure infrastructure for managing cryptographic keys, separating high-level orchestration from low-level secure custody.
+
+## Project Overview
+
+KPM consists of two primary layers:
+- **Key Orchestration Layer (KOL):** Written in **Go**, this layer provides gRPC services for key management and high-level orchestration.
+- **Key Custody Core (KCC):** Written in **Rust**, this layer handles sensitive cryptographic operations and key storage in protected memory. It uses **BoringSSL** (via `bssl-crypto`) for underlying cryptography.
+
+The Go layer communicates with the Rust layer via **FFI (Foreign Function Interface)** using CGO.
+
+## Architecture
+
+### Component Breakdown
+- `key_protection_service/`: Implements the KPS gRPC service and its corresponding KCC FFI bindings.
+- `workload_service/`: Implements the Workload gRPC service and its corresponding KCC FFI bindings.
+- `km_common/`: Shared Rust library containing protobuf definitions, cryptographic wrappers, and protected memory management.
+- `third_party/bssl-crypto/`: A Rust wrapper for BoringSSL, providing safe cryptographic primitives.
+- `boringssl/`: Submodule containing the BoringSSL source code.
+
+## Building and Running
+
+### Prerequisites
+- Go 1.24+
+- Rust 2024 edition
+- `cbindgen` (for generating FFI headers)
+- `bindgen-cli` (ensure `$HOME/.cargo/bin` is in your `PATH`)
+- `cmake` (for building BoringSSL)
+- `buf` (for Go protobuf generation)
+
+### Build Steps
+The build process involves generating protobuf code, FFI headers, building the Rust libraries, and then building/testing the Go services.
+
+1. **Generate Protobuf Code:**
+   - **Go:**
+     ```bash
+     ./gen_keymanager.sh
+     ```
+   - **Rust:** Handled automatically during `cargo build` via `prost-build`.
+
+2. **Generate FFI Headers:**
+   ```bash
+   ./generate_ffi_headers.sh
+   ```
+
+3. **Build Rust Workspace:**
+   ```bash
+   cargo build --release --workspace
+   ```
+
+4. **Run Tests:**
+   ```bash
+   # Rust tests
+   cargo test
+   
+   # Go tests
+   go test ./...
+   ```
+
+## Development Conventions
+
+### Code Style
+- **Go:** Follow standard Go idioms and `go fmt`.
+- **Rust:** Follow standard Rust idioms and `cargo fmt`.
+
+### Testing
+- **Go Tests:** `go test ./...`
+- **Rust Tests:** `cargo test`
 
 ## How to Contribute
 
 To make a new contribution, please follow these steps:
 
 1. Fork the repository on GitHub.
-2. Clone your forked repository:
+2. Clone your forked repository with submodules:
    ```shell
    git clone --recurse-submodules <your-forked-repository-url>
    ```
 3. Create a new branch for your changes:
    ```shell
-   cd key-protection-module
    git checkout -b your-feature-branch
    ```
-4. Make your changes to the codebase.
-5. Commit your changes with a descriptive commit message:
-   ```shell
-   git add <files to be committed>
-   git commit -m "Add new feature X"
-   ```
-6. Push your branch to the remote repository:
-   ```shell
-   git push origin your-feature-branch
-   ```
-7. Open a Pull Request (PR) to merge your changes into the main branch.
+4. Make your changes and ensure tests pass.
+5. Commit your changes with a descriptive message.
+6. Push your branch and open a Pull Request.
 
 Please ensure all source files include the appropriate copyright and license headers. See `docs/contributing.md` for more details.
-
-## Build Steps
-
-To build the key manager module, follow these steps:
-
-```shell
-set -exuo pipefail
-# Install build dependencies for Rust
-apt-get update && apt-get install -y clang build-essential curl tar
-
-# Install CMake 3.28.3 from pre-compiled binaries for flexibility across environments
-curl -sSL https://github.com/Kitware/CMake/releases/download/v3.28.3/cmake-3.28.3-linux-x86_64.tar.gz -o cmake.tar.gz
-tar -zxvf cmake.tar.gz -C /opt/
-export PATH="/opt/cmake-3.28.3-linux-x86_64/bin:$PATH"
-rm cmake.tar.gz
-
-# Install bindgen-cli (needed by BoringSSL's CMake build)
-cargo install bindgen-cli
-export PATH="$HOME/.cargo/bin:$PATH"
-
-# Build the Rust keymanager libraries
-cd keymanager
-cargo build --release
-```
-
-## Source Code Headers
-
-Every file containing source code must include copyright and license
-information. This includes any JS/CSS files that you might be serving out to
-browsers. (This is to help well-intentioned people avoid accidental copying that
-doesn't comply with the license.)
-
-Apache header:
-
-    Copyright 2024 Google LLC
-
-    Licensed under the Apache License, Version 2.0 (the "License");
-    you may not use this file except in compliance with the License.
-    You may obtain a copy of the License at
-
-        https://www.apache.org/licenses/LICENSE-2.0
-
-    Unless required by applicable law or agreed to in writing, software
-    distributed under the License is distributed on an "AS IS" BASIS,
-    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-    See the License for the specific language governing permissions and
-    limitations under the License.
