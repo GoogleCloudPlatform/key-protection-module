@@ -1,0 +1,14 @@
+[Unit]
+Description=Key Management Service Container
+After=network.target containerd.service
+Requires=containerd.service
+
+[Service]
+Type=simple
+Restart=always
+
+ExecStart=/usr/share/oem/kps/kps_runner.sh
+ExecStop=/usr/share/oem/kps/exit_script.sh
+
+[Install]
+WantedBy=multi-user.target

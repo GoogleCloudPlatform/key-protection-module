@@ -1,0 +1,13 @@
+[Unit]
+Description=Attestation Service
+After=network.target keymanager.service
+Requires=keymanager.service containerd.service
+
+[Service]
+Type=simple
+Restart=on-failure
+
+ExecStart=/usr/share/oem/kps/attestation_agent
+
+[Install]
+WantedBy=multi-user.target
