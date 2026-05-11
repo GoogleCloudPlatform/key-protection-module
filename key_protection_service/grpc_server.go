@@ -44,23 +44,23 @@ func ValidationInterceptor(ctx context.Context, req interface{}, info *grpc.Unar
 // grpcCodeFromError maps an FFI status error to a gRPC code so the WSD client
 // can translate it back to the right HTTP status. Without this, the WSD HTTP
 // API regresses to 500 for everything when running against a remote KPS.
+var ffiErrorToGrpcCode = map[error]codes.Code{
+	keymanager.Status_STATUS_NOT_FOUND:             codes.NotFound,
+	keymanager.Status_STATUS_INVALID_ARGUMENT:      codes.InvalidArgument,
+	keymanager.Status_STATUS_UNSUPPORTED_ALGORITHM: codes.InvalidArgument,
+	keymanager.Status_STATUS_INVALID_KEY:           codes.InvalidArgument,
+	keymanager.Status_STATUS_PERMISSION_DENIED:     codes.PermissionDenied,
+	keymanager.Status_STATUS_UNAUTHENTICATED:       codes.Unauthenticated,
+	keymanager.Status_STATUS_ALREADY_EXISTS:        codes.AlreadyExists,
+}
+
 func grpcCodeFromError(err error) codes.Code {
-	switch {
-	case errors.Is(err, keymanager.Status_STATUS_NOT_FOUND):
-		return codes.NotFound
-	case errors.Is(err, keymanager.Status_STATUS_INVALID_ARGUMENT),
-		errors.Is(err, keymanager.Status_STATUS_UNSUPPORTED_ALGORITHM),
-		errors.Is(err, keymanager.Status_STATUS_INVALID_KEY):
-		return codes.InvalidArgument
-	case errors.Is(err, keymanager.Status_STATUS_PERMISSION_DENIED):
-		return codes.PermissionDenied
-	case errors.Is(err, keymanager.Status_STATUS_UNAUTHENTICATED):
-		return codes.Unauthenticated
-	case errors.Is(err, keymanager.Status_STATUS_ALREADY_EXISTS):
-		return codes.AlreadyExists
-	default:
-		return codes.Internal
+	for target, code := range ffiErrorToGrpcCode {
+		if errors.Is(err, target) {
+			return code
+		}
 	}
+	return codes.Internal
 }
 
 // GetCapabilities retrieves the supported cryptographic algorithms.
@@ -68,7 +68,7 @@ func (s *grpcServer) GetCapabilities(ctx context.Context, req *kpspb.GetCapabili
 	// For Bowcaster, KPS needs to report its own capabilities.
 	// Since Vanguard's WSD has the same list of supported algorithms,
 	// we will proxy this request to the service layer.
-	
+
 	// Assuming svc has a GetCapabilities method. If it doesn't we might need to add it,
 	// but the WSD expects a standard GetCapabilitiesResponse format from KPS.
 	// We'll return the hardcoded supported algorithm per the docs for now if it's not in the interface,
