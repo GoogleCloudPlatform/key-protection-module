@@ -227,7 +227,7 @@ jobs:
       - uses: bufbuild/buf-action@v1
         with:
           lint: true
-          breaking: true
+          breaking: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'buf skip breaking') }}
           breaking_against: "https://github.com/${{ github.repository }}.git#branch=main"
           exclude_paths: |
             keymanager/attestation_service/proto
