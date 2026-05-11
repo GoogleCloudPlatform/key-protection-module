@@ -161,6 +161,14 @@ func NewRemoteKeyProtectionService(client kpspb.KeyProtectionServiceClient) *rem
 // httpStatusFromError) can treat remote and in-process KPS errors identically.
 // Errors that aren't gRPC statuses, or whose codes don't have an FFI analogue,
 // are passed through and end up as HTTP 500.
+var grpcCodeToFfiStatus = map[codes.Code]keymanager.Status{
+	codes.NotFound:         keymanager.Status_STATUS_NOT_FOUND,
+	codes.InvalidArgument:  keymanager.Status_STATUS_INVALID_ARGUMENT,
+	codes.PermissionDenied: keymanager.Status_STATUS_PERMISSION_DENIED,
+	codes.Unauthenticated:  keymanager.Status_STATUS_UNAUTHENTICATED,
+	codes.AlreadyExists:    keymanager.Status_STATUS_ALREADY_EXISTS,
+}
+
 func ffiStatusFromGrpcError(err error) error {
 	if err == nil {
 		return nil
@@ -169,22 +177,13 @@ func ffiStatusFromGrpcError(err error) error {
 	if !ok {
 		return err
 	}
-	switch s.Code() {
-	case codes.OK:
+	if s.Code() == codes.OK {
 		return nil
-	case codes.NotFound:
-		return keymanager.Status_STATUS_NOT_FOUND.ToStatus()
-	case codes.InvalidArgument:
-		return keymanager.Status_STATUS_INVALID_ARGUMENT.ToStatus()
-	case codes.PermissionDenied:
-		return keymanager.Status_STATUS_PERMISSION_DENIED.ToStatus()
-	case codes.Unauthenticated:
-		return keymanager.Status_STATUS_UNAUTHENTICATED.ToStatus()
-	case codes.AlreadyExists:
-		return keymanager.Status_STATUS_ALREADY_EXISTS.ToStatus()
-	default:
-		return err
 	}
+	if ffiStat, ok := grpcCodeToFfiStatus[s.Code()]; ok {
+		return ffiStat.ToStatus()
+	}
+	return err
 }
 
 func (r *remoteKeyProtectionService) GenerateKEMKeypair(ctx context.Context, algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
