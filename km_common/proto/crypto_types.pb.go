@@ -7,7 +7,6 @@
 package keymanager
 
 import (
-	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -128,9 +127,9 @@ var File_km_common_proto_crypto_types_proto protoreflect.FileDescriptor
 const file_km_common_proto_crypto_types_proto_rawDesc = "" +
 	"\n" +
 	"\"km_common/proto/crypto_types.proto\x12\n" +
-	"keymanager\x1a km_common/proto/algorithms.proto\x1a\x1bbuf/validate/validate.proto\"-\n" +
-	"\tKeyHandle\x12 \n" +
-	"\x06handle\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06handle\"g\n" +
+	"keymanager\x1a km_common/proto/algorithms.proto\"#\n" +
+	"\tKeyHandle\x12\x16\n" +
+	"\x06handle\x18\x01 \x01(\tR\x06handle\"g\n" +
 	"\n" +
 	"PubKeyInfo\x12:\n" +
 	"\talgorithm\x18\x01 \x01(\v2\x1c.keymanager.AlgorithmDetailsR\talgorithm\x12\x1d\n" +
