@@ -1,5 +1,7 @@
 version: v2
 modules:
   - path: .
+    excludes:
+      - keymanager/attestation_service/proto
 deps:
   - buf.build/bufbuild/protovalidate

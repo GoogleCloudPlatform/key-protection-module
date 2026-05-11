@@ -5,11 +5,12 @@ package keymanager;
 option go_package = "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto;keymanager";
 
 import "km_common/proto/algorithms.proto";
+import "buf/validate/validate.proto";
 
 // Used to refer to key instances held by the service.
 message KeyHandle {
   // A unique identifier (UUID) used to reference this key in subsequent operations.
-  string handle = 1;
+  string handle = 1 [(buf.validate.field).string.uuid = true];
 }
 
 // Information about a public key.
