@@ -42,8 +42,8 @@ message DecapAndSealResponse {
 }
 
 message EnumerateKEMKeysRequest {
-  int32 limit = 1;
-  int32 offset = 2;
+  int32 limit = 1 [(buf.validate.field).int32.gt = 0, (buf.validate.field).int32.lte = 100];
+  int32 offset = 2 [(buf.validate.field).int32.gte = 0];
 }
 
 message KEMKeyInfo {

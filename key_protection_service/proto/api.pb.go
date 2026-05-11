@@ -705,10 +705,10 @@ const file_key_protection_service_proto_api_proto_rawDesc = "" +
 	"\x03aad\x18\x03 \x01(\fR\x03aad\"N\n" +
 	"\x14DecapAndSealResponse\x12\x19\n" +
 	"\bseal_enc\x18\x01 \x01(\fR\asealEnc\x12\x1b\n" +
-	"\tsealed_ct\x18\x02 \x01(\fR\bsealedCt\"G\n" +
-	"\x17EnumerateKEMKeysRequest\x12\x14\n" +
-	"\x05limit\x18\x01 \x01(\x05R\x05limit\x12\x16\n" +
-	"\x06offset\x18\x02 \x01(\x05R\x06offset\"\xd3\x01\n" +
+	"\tsealed_ct\x18\x02 \x01(\fR\bsealedCt\"[\n" +
+	"\x17EnumerateKEMKeysRequest\x12\x1f\n" +
+	"\x05limit\x18\x01 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d \x00R\x05limit\x12\x1f\n" +
+	"\x06offset\x18\x02 \x01(\x05B\a\xbaH\x04\x1a\x02(\x00R\x06offset\"\xd3\x01\n" +
 	"\n" +
 	"KEMKeyInfo\x124\n" +
 	"\n" +
