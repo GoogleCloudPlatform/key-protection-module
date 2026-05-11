@@ -18,9 +18,11 @@ on:
     branches:
       - main
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   build-test:
@@ -226,6 +228,6 @@ jobs:
         with:
           lint: true
           breaking: true
-          against: "https://github.com/${{ github.repository }}.git#branch=main"
+          breaking_against: "https://github.com/${{ github.repository }}.git#branch=main"
           exclude_paths: |
             keymanager/attestation_service/proto
