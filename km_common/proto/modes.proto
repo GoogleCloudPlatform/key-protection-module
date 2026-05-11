@@ -9,11 +9,11 @@ enum ServiceRole {
 
   // The agent acts as the Workload Services Daemon (WSD),
   // exposing key management APIs to workloads.
-  WSD = 1;
+  SERVICE_ROLE_WSD = 1;
 
   // The agent acts as the Key Protection Service (KPS),
   // providing remote key protection capabilities to the WSD.
-  KPS = 2;
+  SERVICE_ROLE_KPS = 2;
 }
 
 enum KeyProtectionMechanism {
@@ -21,15 +21,15 @@ enum KeyProtectionMechanism {
 
   // The key is held by the Workload Services Daemon, and is endorsed by a
   // single CVM attestation.
-  DEFAULT = 1;
+  KEY_PROTECTION_MECHANISM_DEFAULT = 1;
 
   // The key is held by the Key Protection Services VM, and is endorsed by a
   // pair of CVM attestations, from the Workload Services Daemon and Key
   // Protection VM.
-  KEY_PROTECTION_VM = 2;
+  KEY_PROTECTION_MECHANISM_VM = 2;
 
   // An interim solution where the key is held by the Workload Services Daemon
   // emulating the Key Protection Service. It is endorsed by a single CVM
   // attestation.
-  KEY_PROTECTION_VM_EMULATED = 3;
+  KEY_PROTECTION_MECHANISM_VM_EMULATED = 3;
 }

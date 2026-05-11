@@ -209,9 +209,9 @@ var (
 func New(_ context.Context, socketPath string, mode keymanager.KeyProtectionMechanism) (*Server, error) {
 	var kps KeyProtectionService
 	switch mode {
-	case keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED:
+	case keymanager.KeyProtectionMechanism_KEY_PROTECTION_MECHANISM_VM_EMULATED:
 		kps = &keyProtectionService{}
-	case keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM:
+	case keymanager.KeyProtectionMechanism_KEY_PROTECTION_MECHANISM_VM:
 		kps = &remoteKeyProtectionService{}
 	case keymanager.KeyProtectionMechanism_KEY_PROTECTION_MECHANISM_UNSPECIFIED:
 		return nil, fmt.Errorf("key protection mechanism is unspecified")
@@ -424,7 +424,7 @@ func (s *Server) generateKEMKey(w http.ResponseWriter, req *api.GenerateKeyReque
 			},
 			PublicKey: kemPubKey,
 		},
-		KeyProtectionMechanism: keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String(),
+		KeyProtectionMechanism: keymanager.KeyProtectionMechanism_KEY_PROTECTION_MECHANISM_VM_EMULATED.String(),
 		ExpirationTime:         float64(time.Now().Unix()) + float64(req.Lifespan),
 	}
 	writeJSON(w, &resp, http.StatusOK)
@@ -480,7 +480,7 @@ func (s *Server) handleEnumerateKeys(w http.ResponseWriter, _ *http.Request) {
 				},
 				PublicKey: key.KEMPubKey,
 			},
-			KeyProtectionMechanism: keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String(),
+			KeyProtectionMechanism: keymanager.KeyProtectionMechanism_KEY_PROTECTION_MECHANISM_VM_EMULATED.String(),
 			ExpirationTime:         float64(time.Now().Unix()) + float64(key.RemainingLifespanSecs),
 		})
 	}

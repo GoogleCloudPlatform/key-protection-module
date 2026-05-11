@@ -27,23 +27,23 @@ const (
 	ServiceRole_SERVICE_ROLE_UNSPECIFIED ServiceRole = 0
 	// The agent acts as the Workload Services Daemon (WSD),
 	// exposing key management APIs to workloads.
-	ServiceRole_WSD ServiceRole = 1
+	ServiceRole_SERVICE_ROLE_WSD ServiceRole = 1
 	// The agent acts as the Key Protection Service (KPS),
 	// providing remote key protection capabilities to the WSD.
-	ServiceRole_KPS ServiceRole = 2
+	ServiceRole_SERVICE_ROLE_KPS ServiceRole = 2
 )
 
 // Enum value maps for ServiceRole.
 var (
 	ServiceRole_name = map[int32]string{
 		0: "SERVICE_ROLE_UNSPECIFIED",
-		1: "WSD",
-		2: "KPS",
+		1: "SERVICE_ROLE_WSD",
+		2: "SERVICE_ROLE_KPS",
 	}
 	ServiceRole_value = map[string]int32{
 		"SERVICE_ROLE_UNSPECIFIED": 0,
-		"WSD":                      1,
-		"KPS":                      2,
+		"SERVICE_ROLE_WSD":         1,
+		"SERVICE_ROLE_KPS":         2,
 	}
 )
 
@@ -80,30 +80,30 @@ const (
 	KeyProtectionMechanism_KEY_PROTECTION_MECHANISM_UNSPECIFIED KeyProtectionMechanism = 0
 	// The key is held by the Workload Services Daemon, and is endorsed by a
 	// single CVM attestation.
-	KeyProtectionMechanism_DEFAULT KeyProtectionMechanism = 1
+	KeyProtectionMechanism_KEY_PROTECTION_MECHANISM_DEFAULT KeyProtectionMechanism = 1
 	// The key is held by the Key Protection Services VM, and is endorsed by a
 	// pair of CVM attestations, from the Workload Services Daemon and Key
 	// Protection VM.
-	KeyProtectionMechanism_KEY_PROTECTION_VM KeyProtectionMechanism = 2
+	KeyProtectionMechanism_KEY_PROTECTION_MECHANISM_VM KeyProtectionMechanism = 2
 	// An interim solution where the key is held by the Workload Services Daemon
 	// emulating the Key Protection Service. It is endorsed by a single CVM
 	// attestation.
-	KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED KeyProtectionMechanism = 3
+	KeyProtectionMechanism_KEY_PROTECTION_MECHANISM_VM_EMULATED KeyProtectionMechanism = 3
 )
 
 // Enum value maps for KeyProtectionMechanism.
 var (
 	KeyProtectionMechanism_name = map[int32]string{
 		0: "KEY_PROTECTION_MECHANISM_UNSPECIFIED",
-		1: "DEFAULT",
-		2: "KEY_PROTECTION_VM",
-		3: "KEY_PROTECTION_VM_EMULATED",
+		1: "KEY_PROTECTION_MECHANISM_DEFAULT",
+		2: "KEY_PROTECTION_MECHANISM_VM",
+		3: "KEY_PROTECTION_MECHANISM_VM_EMULATED",
 	}
 	KeyProtectionMechanism_value = map[string]int32{
 		"KEY_PROTECTION_MECHANISM_UNSPECIFIED": 0,
-		"DEFAULT":                              1,
-		"KEY_PROTECTION_VM":                    2,
-		"KEY_PROTECTION_VM_EMULATED":           3,
+		"KEY_PROTECTION_MECHANISM_DEFAULT":     1,
+		"KEY_PROTECTION_MECHANISM_VM":          2,
+		"KEY_PROTECTION_MECHANISM_VM_EMULATED": 3,
 	}
 )
 
@@ -139,16 +139,16 @@ var File_km_common_proto_modes_proto protoreflect.FileDescriptor
 const file_km_common_proto_modes_proto_rawDesc = "" +
 	"\n" +
 	"\x1bkm_common/proto/modes.proto\x12\n" +
-	"keymanager*=\n" +
+	"keymanager*W\n" +
 	"\vServiceRole\x12\x1c\n" +
-	"\x18SERVICE_ROLE_UNSPECIFIED\x10\x00\x12\a\n" +
-	"\x03WSD\x10\x01\x12\a\n" +
-	"\x03KPS\x10\x02*\x86\x01\n" +
+	"\x18SERVICE_ROLE_UNSPECIFIED\x10\x00\x12\x14\n" +
+	"\x10SERVICE_ROLE_WSD\x10\x01\x12\x14\n" +
+	"\x10SERVICE_ROLE_KPS\x10\x02*\xb3\x01\n" +
 	"\x16KeyProtectionMechanism\x12(\n" +
-	"$KEY_PROTECTION_MECHANISM_UNSPECIFIED\x10\x00\x12\v\n" +
-	"\aDEFAULT\x10\x01\x12\x15\n" +
-	"\x11KEY_PROTECTION_VM\x10\x02\x12\x1e\n" +
-	"\x1aKEY_PROTECTION_VM_EMULATED\x10\x03BQZOgithub.com/GoogleCloudPlatform/key-protection-module/km_common/proto;keymanagerb\x06proto3"
+	"$KEY_PROTECTION_MECHANISM_UNSPECIFIED\x10\x00\x12$\n" +
+	" KEY_PROTECTION_MECHANISM_DEFAULT\x10\x01\x12\x1f\n" +
+	"\x1bKEY_PROTECTION_MECHANISM_VM\x10\x02\x12(\n" +
+	"$KEY_PROTECTION_MECHANISM_VM_EMULATED\x10\x03BQZOgithub.com/GoogleCloudPlatform/key-protection-module/km_common/proto;keymanagerb\x06proto3"
 
 var (
 	file_km_common_proto_modes_proto_rawDescOnce sync.Once

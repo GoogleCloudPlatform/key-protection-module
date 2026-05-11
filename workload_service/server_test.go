@@ -187,7 +187,7 @@ func TestProtoJSONRoundTrips(t *testing.T) {
 					},
 					PublicKey: []byte{1, 2, 3, 4},
 				},
-				KeyProtectionMechanism: keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String(),
+				KeyProtectionMechanism: keymanager.KeyProtectionMechanism_KEY_PROTECTION_MECHANISM_VM_EMULATED.String(),
 				ExpirationTime:         1742467200,
 			},
 			got: &api.GenerateKeyResponse{},
@@ -209,7 +209,7 @@ func TestProtoJSONRoundTrips(t *testing.T) {
 							},
 							PublicKey: []byte{5, 6, 7, 8},
 						},
-						KeyProtectionMechanism: keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String(),
+						KeyProtectionMechanism: keymanager.KeyProtectionMechanism_KEY_PROTECTION_MECHANISM_VM_EMULATED.String(),
 						ExpirationTime:         1742468200,
 					},
 				},
@@ -303,8 +303,8 @@ func TestHandleGenerateKeySuccess(t *testing.T) {
 	if !bytes.Equal(resp.PubKey.PublicKey, kemPubKey) {
 		t.Fatalf("expected KEM pub key %s, got %s", kemPubKey, resp.PubKey.PublicKey)
 	}
-	if resp.KeyProtectionMechanism != keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String() {
-		t.Fatalf("expected %s, got %s", keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String(), resp.KeyProtectionMechanism)
+	if resp.KeyProtectionMechanism != keymanager.KeyProtectionMechanism_KEY_PROTECTION_MECHANISM_VM_EMULATED.String() {
+		t.Fatalf("expected %s, got %s", keymanager.KeyProtectionMechanism_KEY_PROTECTION_MECHANISM_VM_EMULATED.String(), resp.KeyProtectionMechanism)
 	}
 	if resp.ExpirationTime <= float64(time.Now().Unix()) {
 		t.Fatalf("expected expiration time in the future, got %f", resp.ExpirationTime)
@@ -658,8 +658,8 @@ func TestHandleEnumerateKeysWithKeys(t *testing.T) {
 	if !bytes.Equal(info1.PubKey.PublicKey, kemPubKey1) {
 		t.Fatalf("KEM pub key mismatch for kem1")
 	}
-	if info1.KeyProtectionMechanism != keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String() {
-		t.Fatalf("expected key protection mechanism %s, got %s", keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String(), info1.KeyProtectionMechanism)
+	if info1.KeyProtectionMechanism != keymanager.KeyProtectionMechanism_KEY_PROTECTION_MECHANISM_VM_EMULATED.String() {
+		t.Fatalf("expected key protection mechanism %s, got %s", keymanager.KeyProtectionMechanism_KEY_PROTECTION_MECHANISM_VM_EMULATED.String(), info1.KeyProtectionMechanism)
 	}
 	// Approximate check for expiration time
 	if info1.ExpirationTime <= float64(time.Now().Unix()) {

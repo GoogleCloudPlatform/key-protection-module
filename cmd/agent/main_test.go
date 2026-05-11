@@ -31,7 +31,7 @@ func TestRunWSD(t *testing.T) {
 
 	errChan := make(chan error, 1)
 	go func() {
-		errChan <- runWSD(ctx, socketPath, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
+		errChan <- runWSD(ctx, socketPath, keymanager.KeyProtectionMechanism_KEY_PROTECTION_MECHANISM_VM_EMULATED)
 	}()
 
 	// Wait for the socket file to be created to ensure the server has started
@@ -75,7 +75,7 @@ func TestRunWSD_InvalidSocketPath(t *testing.T) {
 
 	socketPath := filepath.Join(tmpFile.Name(), "wsd.sock")
 
-	err = runWSD(ctx, socketPath, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
+	err = runWSD(ctx, socketPath, keymanager.KeyProtectionMechanism_KEY_PROTECTION_MECHANISM_VM_EMULATED)
 	if err == nil {
 		t.Fatal("Expected runWSD() to return an error for invalid socket path")
 	}
@@ -144,7 +144,7 @@ func TestParseEnvEnum(t *testing.T) {
 		"VALUE1": 1,
 		"VALUE2": 2,
 	}
-	defaultValue := keymanager.ServiceRole_WSD
+	defaultValue := keymanager.ServiceRole_SERVICE_ROLE_WSD
 
 	// Test default value
 	if err := os.Unsetenv(key); err != nil {

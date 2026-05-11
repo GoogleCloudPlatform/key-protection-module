@@ -5,6 +5,10 @@ modules:
       - keymanager/attestation_service/proto # excluding since this has a dynamic dependency on go-tpm-tools
 deps:
   - buf.build/bufbuild/protovalidate
+lint:
+  except:
+    - PACKAGE_DIRECTORY_MATCH
+    - PACKAGE_VERSION_SUFFIX
 breaking:
   use:
     - WIRE_JSON

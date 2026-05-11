@@ -227,3 +227,5 @@ jobs:
           lint: true
           breaking: true
           against: "https://github.com/${{ github.repository }}.git#branch=main"
+          exclude_paths: |
+            keymanager/attestation_service/proto

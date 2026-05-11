@@ -26,13 +26,13 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	mode := parseEnvEnum("KEY_PROTECTION_MECHANISM", keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED, keymanager.KeyProtectionMechanism_value)
-	role := parseEnvEnum("SERVICE_ROLE", keymanager.ServiceRole_WSD, keymanager.ServiceRole_value)
+	mode := parseEnvEnum("KEY_PROTECTION_MECHANISM", keymanager.KeyProtectionMechanism_KEY_PROTECTION_MECHANISM_VM_EMULATED, keymanager.KeyProtectionMechanism_value)
+	role := parseEnvEnum("SERVICE_ROLE", keymanager.ServiceRole_SERVICE_ROLE_WSD, keymanager.ServiceRole_value)
 
 	log.Printf("Starting Key Protection Agent. Mode: %s, Role: %s\n", mode, role)
 
 	var err error
-	if mode == keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM && role == keymanager.ServiceRole_KPS {
+	if mode == keymanager.KeyProtectionMechanism_KEY_PROTECTION_MECHANISM_VM && role == keymanager.ServiceRole_SERVICE_ROLE_KPS {
 		err = runKPS(ctx, *kpsPort)
 	} else {
 		err = runWSD(ctx, *socketPath, mode)
