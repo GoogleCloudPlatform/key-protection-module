@@ -195,6 +195,8 @@ func (r *remoteKeyProtectionService) GenerateKEMKeypair(ctx context.Context, alg
 		},
 		LifespanSecs: lifespanSecs,
 	}
+	ctx, cancel := context.WithTimeout(ctx, RPCTimeout)
+	defer cancel()
 	resp, err := r.client.GenerateKEMKeypair(ctx, req)
 	if err != nil {
 		return uuid.Nil, nil, ffiStatusFromGrpcError(err)
@@ -211,6 +213,8 @@ func (r *remoteKeyProtectionService) EnumerateKEMKeys(ctx context.Context, limit
 		Limit:  int32(limit),
 		Offset: int32(offset),
 	}
+	ctx, cancel := context.WithTimeout(ctx, RPCTimeout)
+	defer cancel()
 	resp, err := r.client.EnumerateKEMKeys(ctx, req)
 	if err != nil {
 		return nil, false, ffiStatusFromGrpcError(err)
@@ -237,6 +241,8 @@ func (r *remoteKeyProtectionService) DestroyKEMKey(ctx context.Context, kemUUID 
 	req := &kpspb.DestroyKEMKeyRequest{
 		KeyHandle: &keymanager.KeyHandle{Handle: kemUUID.String()},
 	}
+	ctx, cancel := context.WithTimeout(ctx, RPCTimeout)
+	defer cancel()
 	_, err := r.client.DestroyKEMKey(ctx, req)
 	return ffiStatusFromGrpcError(err)
 }
@@ -249,6 +255,8 @@ func (r *remoteKeyProtectionService) DecapAndSeal(ctx context.Context, kemUUID u
 		},
 		Aad: aad,
 	}
+	ctx, cancel := context.WithTimeout(ctx, RPCTimeout)
+	defer cancel()
 	resp, err := r.client.DecapAndSeal(ctx, req)
 	if err != nil {
 		return nil, nil, ffiStatusFromGrpcError(err)
@@ -260,6 +268,8 @@ func (r *remoteKeyProtectionService) GetKEMKey(ctx context.Context, id uuid.UUID
 	req := &kpspb.GetKEMKeyRequest{
 		KeyHandle: &keymanager.KeyHandle{Handle: id.String()},
 	}
+	ctx, cancel := context.WithTimeout(ctx, RPCTimeout)
+	defer cancel()
 	resp, err := r.client.GetKEMKey(ctx, req)
 	if err != nil {
 		return nil, nil, nil, 0, ffiStatusFromGrpcError(err)
@@ -308,6 +318,8 @@ var (
 	// ClaimsRequestTimeout is the maximum time to wait for enqueuing the request to
 	// claims channel for getting the key claims.
 	ClaimsRequestTimeout = 5 * time.Second
+	// RPCTimeout is the maximum time to wait for remote KPS RPC calls.
+	RPCTimeout = 5 * time.Second
 )
 
 // New creates a new WSD Server listening on the given unix socket path.

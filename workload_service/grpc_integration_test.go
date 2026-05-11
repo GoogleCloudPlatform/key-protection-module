@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -402,13 +404,21 @@ func TestIntegrationGRPC_ErrorCodeRoundTrip(t *testing.T) {
 type fakeKPSClient struct {
 	generateResp *kpspb.GenerateKEMKeypairResponse
 	generateErr  error
+	delay        time.Duration
 }
 
 func (f *fakeKPSClient) GetCapabilities(ctx context.Context, in *kpspb.GetCapabilitiesRequest, opts ...grpc.CallOption) (*kpspb.GetCapabilitiesResponse, error) {
 	return nil, nil
 }
 
-func (f *fakeKPSClient) GenerateKEMKeypair(_ context.Context, _ *kpspb.GenerateKEMKeypairRequest, _ ...grpc.CallOption) (*kpspb.GenerateKEMKeypairResponse, error) {
+func (f *fakeKPSClient) GenerateKEMKeypair(ctx context.Context, _ *kpspb.GenerateKEMKeypairRequest, _ ...grpc.CallOption) (*kpspb.GenerateKEMKeypairResponse, error) {
+	if f.delay > 0 {
+		select {
+		case <-time.After(f.delay):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 	return f.generateResp, f.generateErr
 }
 func (f *fakeKPSClient) DecapAndSeal(context.Context, *kpspb.DecapAndSealRequest, ...grpc.CallOption) (*kpspb.DecapAndSealResponse, error) {
@@ -451,5 +461,30 @@ func TestRemoteKeyProtectionService_GenerateKEMKeypair_BadHandle(t *testing.T) {
 	}
 	if id != uuid.Nil {
 		t.Errorf("expected uuid.Nil on error, got %s", id)
+	}
+}
+
+func TestRemoteKeyProtectionService_GenerateKEMKeypair_Timeout(t *testing.T) {
+	fake := &fakeKPSClient{
+		delay: 2 * RPCTimeout, // Longer than the timeout
+		generateResp: &kpspb.GenerateKEMKeypairResponse{
+			KeyHandle: &keymanager.KeyHandle{Handle: uuid.New().String()},
+			KemPubKey: &keymanager.KemPublicKey{
+				Algorithm: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+				PublicKey: make([]byte, 32),
+			},
+		},
+	}
+
+	remote := NewRemoteKeyProtectionService(fake)
+	_, _, err := remote.GenerateKEMKeypair(context.Background(),
+		&keymanager.HpkeAlgorithm{Kem: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256},
+		make([]byte, 32), 3600)
+
+	if err == nil {
+		t.Fatalf("expected timeout error, got nil")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) && !strings.Contains(err.Error(), "context deadline exceeded") {
+		t.Errorf("expected timeout error, got: %v", err)
 	}
 }
