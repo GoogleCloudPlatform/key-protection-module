@@ -44,11 +44,8 @@ func TestIntegrationGRPC_EndToEnd(t *testing.T) {
 	// 4. Register the server and serve in a background goroutine
 	grpcServer := grpc.NewServer()
 	kpspb.RegisterKeyProtectionServiceServer(grpcServer, kpsGrpcServer)
-	go func() {
-		if err := grpcServer.Serve(listener); err != nil {
-			// Serve always returns an error when Stop is called, ignore
-		}
-	}()
+	// Serve always returns an error when Stop is called; ignore.
+	go func() { _ = grpcServer.Serve(listener) }()
 	defer grpcServer.Stop()
 
 	// 5. Create a gRPC client connection to that listener
@@ -56,7 +53,7 @@ func TestIntegrationGRPC_EndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to dial grpc server: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// 6. Instantiate the remoteKeyProtectionService with that client
 	kpsClient := kpspb.NewKeyProtectionServiceClient(conn)
@@ -70,7 +67,7 @@ func TestIntegrationGRPC_EndToEnd(t *testing.T) {
 		t.Fatalf("failed to create wsd server: %v", err)
 	}
 	defer func() {
-		wsdServer.listener.Close()
+		_ = wsdServer.listener.Close()
 		close(wsdServer.claimsChan)
 	}()
 
@@ -94,7 +91,7 @@ func TestIntegrationGRPC_EndToEnd(t *testing.T) {
 	if err := json.NewDecoder(genResp.Body).Decode(&genResMap); err != nil {
 		t.Fatalf("Failed to decode Generate Key response: %v", err)
 	}
-	genResp.Body.Close()
+	_ = genResp.Body.Close()
 
 	keyHandleObj, ok := genResMap["key_handle"].(map[string]interface{})
 	if !ok {
@@ -117,7 +114,7 @@ func TestIntegrationGRPC_EndToEnd(t *testing.T) {
 	if err := json.NewDecoder(enumResp.Body).Decode(&enumResMap); err != nil {
 		t.Fatalf("Failed to decode Enumerate Keys response: %v", err)
 	}
-	enumResp.Body.Close()
+	_ = enumResp.Body.Close()
 
 	// Ensure the generated key is in the list
 	keysList, ok := enumResMap["key_infos"].([]interface{})
@@ -157,7 +154,7 @@ func TestIntegrationGRPC_EndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Decap request failed: %v", err)
 	}
-	decapResp.Body.Close()
+	_ = decapResp.Body.Close()
 
 	// Expect 500 because the ciphertext is invalid
 	if decapResp.StatusCode != http.StatusInternalServerError {
@@ -170,7 +167,7 @@ func TestIntegrationGRPC_EndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Destroy request failed: %v", err)
 	}
-	destroyResp.Body.Close()
+	_ = destroyResp.Body.Close()
 	if destroyResp.StatusCode != http.StatusNoContent {
 		t.Fatalf("Destroy expected status 204, got %d", destroyResp.StatusCode)
 	}
@@ -235,7 +232,7 @@ func setupGRPCRoundTrip(t *testing.T, stub kps.KeyProtectionService, kemUUID uui
 	if err != nil {
 		t.Fatalf("failed to dial grpc server: %v", err)
 	}
-	t.Cleanup(func() { conn.Close() })
+	t.Cleanup(func() { _ = conn.Close() })
 
 	remoteKps := NewRemoteKeyProtectionService(kpspb.NewKeyProtectionServiceClient(conn))
 	mockWsd := &mockWorkloadService{uuid: uuid.New(), pubKey: []byte("thirty-two-bytes-of-dummy-pubkey")}
@@ -246,14 +243,14 @@ func setupGRPCRoundTrip(t *testing.T, stub kps.KeyProtectionService, kemUUID uui
 	if err != nil {
 		t.Fatalf("mkdir temp: %v", err)
 	}
-	t.Cleanup(func() { os.RemoveAll(sockDir) })
+	t.Cleanup(func() { _ = os.RemoveAll(sockDir) })
 
 	wsdServer, err := NewServer(remoteKps, mockWsd, filepath.Join(sockDir, "s"))
 	if err != nil {
 		t.Fatalf("failed to create wsd server: %v", err)
 	}
 	t.Cleanup(func() {
-		wsdServer.listener.Close()
+		_ = wsdServer.listener.Close()
 		close(wsdServer.claimsChan)
 	})
 
@@ -387,7 +384,7 @@ func TestIntegrationGRPC_ErrorCodeRoundTrip(t *testing.T) {
 			if err != nil {
 				t.Fatalf("request failed: %v", err)
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != tc.wantHTTPStatus {
 				respBody, _ := io.ReadAll(resp.Body)
@@ -407,7 +404,7 @@ type fakeKPSClient struct {
 	delay        time.Duration
 }
 
-func (f *fakeKPSClient) GetCapabilities(ctx context.Context, in *kpspb.GetCapabilitiesRequest, opts ...grpc.CallOption) (*kpspb.GetCapabilitiesResponse, error) {
+func (f *fakeKPSClient) GetCapabilities(_ context.Context, _ *kpspb.GetCapabilitiesRequest, _ ...grpc.CallOption) (*kpspb.GetCapabilitiesResponse, error) {
 	return nil, nil
 }
 

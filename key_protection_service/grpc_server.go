@@ -30,7 +30,7 @@ func NewGrpcServer(svc KeyProtectionService) kpspb.KeyProtectionServiceServer {
 }
 
 // ValidationInterceptor is a gRPC unary server interceptor that validates requests.
-func ValidationInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+func ValidationInterceptor(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 	msg, ok := req.(proto.Message)
 	if !ok {
 		return nil, status.Errorf(codes.Internal, "request is not a proto message")
@@ -64,7 +64,7 @@ func grpcCodeFromError(err error) codes.Code {
 }
 
 // GetCapabilities retrieves the supported cryptographic algorithms.
-func (s *grpcServer) GetCapabilities(ctx context.Context, req *kpspb.GetCapabilitiesRequest) (*kpspb.GetCapabilitiesResponse, error) {
+func (s *grpcServer) GetCapabilities(_ context.Context, _ *kpspb.GetCapabilitiesRequest) (*kpspb.GetCapabilitiesResponse, error) {
 	// For Bowcaster, KPS needs to report its own capabilities.
 	// Since Vanguard's WSD has the same list of supported algorithms,
 	// we will proxy this request to the service layer.

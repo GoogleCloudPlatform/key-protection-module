@@ -126,23 +126,23 @@ func (r *workloadService) GetBindingKey(id uuid.UUID) ([]byte, *keymanager.HpkeA
 	return wskcc.GetBindingKey(id)
 }
 
-func (r *keyProtectionService) GenerateKEMKeypair(ctx context.Context, algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+func (r *keyProtectionService) GenerateKEMKeypair(_ context.Context, algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	return kpskcc.GenerateKEMKeypair(algo, bindingPubKey, lifespanSecs)
 }
 
-func (r *keyProtectionService) EnumerateKEMKeys(ctx context.Context, limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
+func (r *keyProtectionService) EnumerateKEMKeys(_ context.Context, limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
 	return kpskcc.EnumerateKEMKeys(limit, offset)
 }
 
-func (r *keyProtectionService) DestroyKEMKey(ctx context.Context, kemUUID uuid.UUID) error {
+func (r *keyProtectionService) DestroyKEMKey(_ context.Context, kemUUID uuid.UUID) error {
 	return kpskcc.DestroyKEMKey(kemUUID)
 }
 
-func (r *keyProtectionService) DecapAndSeal(ctx context.Context, kemUUID uuid.UUID, encapsulatedKey, aad []byte) (sealEnc []byte, sealedCT []byte, err error) {
+func (r *keyProtectionService) DecapAndSeal(_ context.Context, kemUUID uuid.UUID, encapsulatedKey, aad []byte) (sealEnc []byte, sealedCT []byte, err error) {
 	return kpskcc.DecapAndSeal(kemUUID, encapsulatedKey, aad)
 }
 
-func (r *keyProtectionService) GetKEMKey(ctx context.Context, id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+func (r *keyProtectionService) GetKEMKey(_ context.Context, id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
 	return kpskcc.GetKEMKey(id)
 }
 
@@ -150,7 +150,9 @@ type remoteKeyProtectionService struct {
 	client kpspb.KeyProtectionServiceClient
 }
 
-func NewRemoteKeyProtectionService(client kpspb.KeyProtectionServiceClient) *remoteKeyProtectionService {
+// NewRemoteKeyProtectionService returns a KeyProtectionService that proxies
+// every call over the given gRPC client to a remote KPS instance.
+func NewRemoteKeyProtectionService(client kpspb.KeyProtectionServiceClient) KeyProtectionService {
 	return &remoteKeyProtectionService{
 		client: client,
 	}
@@ -358,7 +360,7 @@ func New(_ context.Context, socketPath string, mode keymanager.KeyProtectionMech
 	s, err := NewServer(kps, &workloadService{}, socketPath)
 	if err != nil {
 		if conn != nil {
-			conn.Close()
+			_ = conn.Close()
 		}
 		return nil, err
 	}
