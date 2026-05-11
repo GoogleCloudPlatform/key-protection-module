@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "shared_secret": {
+      "type": "object",
+      "properties": {
+        "algorithm": {"type": "string"},
+        "secret": {"type": "string"}
+      },
+      "required": ["algorithm", "secret"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["shared_secret"],
+  "additionalProperties": false
+}

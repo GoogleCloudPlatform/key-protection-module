@@ -98,34 +98,41 @@ steps:
         trap 'echo "Cleaning up VM..."; gcloud compute instances delete "$${VM_NAME}" --zone="$${ZONE}" --quiet || true' EXIT
         ./scripts/vm-test-monitor.sh "$${VM_NAME}" "$${ZONE}"
 
-  # 6. Final validation: Containerized socket check for the production image
-  - name: 'gcr.io/cloud-builders/docker'
-    id: FinalSocketCheck
+  # 6. Final validation: Contract enforcement integration tests
+  - name: 'python:3.10'
+    id: WsdApiSignatureChecks
     waitFor: ['MonitorVMTests']
     entrypoint: 'bash'
     args:
       - '-c'
       - |
+        # Install docker CLI in python container to manage the agent container
+        apt-get update && apt-get install -y docker.io
+        
         mkdir -p /workspace/socket
+        
+        echo "Starting production agent container..."
         docker run -d --name agent-verify \
           -v /workspace/socket:/run/container_launcher \
           '${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA}'
         
-        # Wait for socket
+        echo "Waiting for socket to be ready..."
         timeout 30s bash -c 'until [ -S /workspace/socket/kmaserver.sock ]; do sleep 1; done'
         
-        # Basic API probe
-        docker run --rm --user root \
-          -v /workspace/socket:/socket \
-          curlimages/curl:latest -s --unix-socket /socket/kmaserver.sock http://localhost/v1/capabilities \
-          | grep "KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256"
+        echo "Installing testing dependencies..."
+        pip install requests requests-unixsocket pytest jsonschema
         
+        echo "Running WSD API signature tests..."
+        export WSD_SOCKET_PATH="/workspace/socket/kmaserver.sock"
+        pytest tests/integration/test_wsd_api_signatures.py -v
+        
+        echo "Cleaning up agent container..."
         docker rm -f agent-verify
 
   # 7. Final step: Tag verified image as latest and push
   - name: 'gcr.io/cloud-builders/docker'
     id: ReleaseLatest
-    waitFor: ['FinalSocketCheck']
+    waitFor: ['WsdApiSignatureChecks']
     entrypoint: 'bash'
     args:
       - '-c'
