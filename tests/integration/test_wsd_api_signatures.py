@@ -47,7 +47,7 @@ def valid_key_handle(wsd_client):
         "lifespan": 3600
     }
     resp = session.post(f"{base_url}/v1/keys:generate_key", json=payload)
-    assert resp.status_code == 200
+    assert resp.status_code == 200, f"Response: {resp.text}"
     data = resp.json()
     return data["key_handle"]["handle"]
 
@@ -56,7 +56,7 @@ def valid_key_handle(wsd_client):
 def test_get_capabilities_success(wsd_client):
     base_url, session = wsd_client
     resp = session.get(f"{base_url}/v1/capabilities")
-    assert resp.status_code == 200
+    assert resp.status_code == 200, f"Response: {resp.text}"
     validate(instance=resp.json(), schema=CAPABILITIES_SCHEMA)
 
 # --- 2. Generate Key Tests ---
@@ -120,7 +120,7 @@ def test_get_capabilities_success(wsd_client):
 def test_generate_key_signature(wsd_client, payload, expected_status, expected_error_subset):
     base_url, session = wsd_client
     resp = session.post(f"{base_url}/v1/keys:generate_key", json=payload)
-    assert resp.status_code == expected_status
+    assert resp.status_code == expected_status, f"Response: {resp.text}"
     
     if expected_status == 200:
         validate(instance=resp.json(), schema=GENERATE_KEY_SCHEMA)
@@ -134,7 +134,7 @@ def test_generate_key_signature(wsd_client, payload, expected_status, expected_e
 def test_enumerate_keys_success(wsd_client, valid_key_handle):
     base_url, session = wsd_client
     resp = session.get(f"{base_url}/v1/keys")
-    assert resp.status_code == 200
+    assert resp.status_code == 200, f"Response: {resp.text}"
     data = resp.json()
     validate(instance=data, schema=ENUMERATE_KEYS_SCHEMA)
     # Verify the key we just generated is in the list
@@ -144,61 +144,70 @@ def test_enumerate_keys_success(wsd_client, valid_key_handle):
 # --- 4. Decapsulate Tests ---
 
 @pytest.mark.parametrize(
-    "payload_gen_fn,expected_status,expected_error_subset",
+    "payload,expected_status,expected_error_subset",
     [
         # Missing key_handle
         (
-            lambda key: {"ciphertext": {"algorithm": "KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256", "ciphertext": "dGVzdA=="}},
+            {"ciphertext": {"algorithm": "KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256", "ciphertext": "dGVzdA=="}},
             400,
             "invalid request"
         ),
         # Missing ciphertext
         (
-            lambda key: {"key_handle": {"handle": key}},
+            {"key_handle": {"handle": str(uuid.uuid4())}},
             400,
             "invalid request"
         ),
         # Invalid UUID for key handle
         (
-            lambda key: {"key_handle": {"handle": "not-a-uuid"}, "ciphertext": {"algorithm": "KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256", "ciphertext": "dGVzdA=="}},
+            {"key_handle": {"handle": "not-a-uuid"}, "ciphertext": {"algorithm": "KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256", "ciphertext": "dGVzdA=="}},
             400,
             "invalid key_handle.handle"
         ),
         # Unsupported KEM algorithm
         (
-            lambda key: {"key_handle": {"handle": key}, "ciphertext": {"algorithm": "KEM_ALGORITHM_UNSPECIFIED", "ciphertext": "dGVzdA=="}},
+            {"key_handle": {"handle": str(uuid.uuid4())}, "ciphertext": {"algorithm": "KEM_ALGORITHM_UNSPECIFIED", "ciphertext": "dGVzdA=="}},
             400,
             "unsupported ciphertext algorithm: 0"
         ),
         # Empty ciphertext bytes
         (
-            lambda key: {"key_handle": {"handle": key}, "ciphertext": {"algorithm": "KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256", "ciphertext": ""}},
+            {"key_handle": {"handle": str(uuid.uuid4())}, "ciphertext": {"algorithm": "KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256", "ciphertext": ""}},
             400,
             "ciphertext.ciphertext must not be empty"
         ),
         # Key not found (valid UUID but non-existent)
         (
-            lambda key: {"key_handle": {"handle": str(uuid.uuid4())}, "ciphertext": {"algorithm": "KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256", "ciphertext": "dGVzdA=="}},
+            {"key_handle": {"handle": str(uuid.uuid4())}, "ciphertext": {"algorithm": "KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256", "ciphertext": "dGVzdA=="}},
             404,
             "KEM key handle not found"
         ),
-        # Invalid Ciphertext (triggers decapsulation failure in backend -> 500)
-        (
-            lambda key: {"key_handle": {"handle": key}, "ciphertext": {"algorithm": "KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256", "ciphertext": "dGVzdA=="}},
-            500,
-            "failed to decap and seal"
-        ),
     ]
 )
-def test_decapsulate_signature(wsd_client, valid_key_handle, payload_gen_fn, expected_status, expected_error_subset):
+def test_decapsulate_signature_errors(wsd_client, payload, expected_status, expected_error_subset):
     base_url, session = wsd_client
-    payload = payload_gen_fn(valid_key_handle)
     resp = session.post(f"{base_url}/v1/keys:decap", json=payload)
-    assert resp.status_code == expected_status
+    assert resp.status_code == expected_status, f"Response: {resp.text}"
     
     data = resp.json()
     validate(instance=data, schema=ERROR_SCHEMA)
     assert expected_error_subset in data["error"]
+
+def test_decapsulate_invalid_ciphertext(wsd_client, valid_key_handle):
+    base_url, session = wsd_client
+    payload = {
+        "key_handle": {"handle": valid_key_handle},
+        "ciphertext": {
+            "algorithm": "KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256",
+            "ciphertext": "dGVzdA=="
+        }
+    }
+    resp = session.post(f"{base_url}/v1/keys:decap", json=payload)
+    assert resp.status_code == 500, f"Response: {resp.text}"
+    
+    data = resp.json()
+    validate(instance=data, schema=ERROR_SCHEMA)
+    assert "failed to decap and seal" in data["error"]
 
 # --- 5. Destroy Key Tests ---
 
@@ -208,43 +217,42 @@ def test_destroy_key_success(wsd_client, valid_key_handle):
     
     # Destroy
     resp = session.post(f"{base_url}/v1/keys:destroy", json=payload)
-    assert resp.status_code == 204
+    assert resp.status_code == 204, f"Response: {resp.text}"
     assert resp.text == "" # 204 should have no body
     
     # Verify it is gone (enumerate)
     resp_enum = session.get(f"{base_url}/v1/keys")
-    assert resp_enum.status_code == 200
+    assert resp_enum.status_code == 200, f"Response: {resp_enum.text}"
     handles = [k["key_handle"]["handle"] for k in resp_enum.json()["key_infos"]]
     assert valid_key_handle not in handles
 
 @pytest.mark.parametrize(
-    "payload_gen_fn,expected_status,expected_error_subset",
+    "payload,expected_status,expected_error_subset",
     [
         # Missing key_handle
         (
-            lambda key: {},
+            {},
             400,
             "invalid request"
         ),
         # Invalid UUID
         (
-            lambda key: {"key_handle": {"handle": "not-a-uuid"}},
+            {"key_handle": {"handle": "not-a-uuid"}},
             400,
             "invalid key handle"
         ),
         # Key not found (valid UUID but non-existent)
         (
-            lambda key: {"key_handle": {"handle": str(uuid.uuid4())}},
+            {"key_handle": {"handle": str(uuid.uuid4())}},
             404,
             "KEM key handle not found"
         ),
     ]
 )
-def test_destroy_key_signature_errors(wsd_client, valid_key_handle, payload_gen_fn, expected_status, expected_error_subset):
+def test_destroy_key_signature_errors(wsd_client, payload, expected_status, expected_error_subset):
     base_url, session = wsd_client
-    payload = payload_gen_fn(valid_key_handle)
     resp = session.post(f"{base_url}/v1/keys:destroy", json=payload)
-    assert resp.status_code == expected_status
+    assert resp.status_code == expected_status, f"Response: {resp.text}"
     
     data = resp.json()
     validate(instance=data, schema=ERROR_SCHEMA)

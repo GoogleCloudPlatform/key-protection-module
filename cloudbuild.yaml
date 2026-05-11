@@ -98,41 +98,67 @@ steps:
         trap 'echo "Cleaning up VM..."; gcloud compute instances delete "$${VM_NAME}" --zone="$${ZONE}" --quiet || true' EXIT
         ./scripts/vm-test-monitor.sh "$${VM_NAME}" "$${ZONE}"
 
-  # 6. Final validation: Contract enforcement integration tests
-  - name: 'python:3.10'
-    id: WsdApiSignatureChecks
-    waitFor: ['MonitorVMTests']
+  # 5b. Create a GCE VM for schema contract tests (reusing the test image with custom command)
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: CreateSchemaTestVM
+    waitFor: ['PushImages']
     entrypoint: 'bash'
     args:
       - '-c'
       - |
-        # Install docker CLI in python container to manage the agent container
-        apt-get update && apt-get install -y docker.io
-        
+        gcloud compute instances create "kpm-schema-test-vm-${BUILD_ID}" \
+          --zone="${_ZONE}" \
+          --machine-type=e2-standard-4 \
+          --boot-disk-size=50GB \
+          --image-family=cos-stable \
+          --image-project=cos-cloud \
+          --maintenance-policy=TERMINATE \
+          --provisioning-model=SPOT \
+          --scopes=cloud-platform \
+          --metadata-from-file=startup-script=scripts/vm-test-startup.sh \
+          --metadata="location=${LOCATION},test_image=${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME_TEST}:${SHORT_SHA},test_command=bash /app/tests/run_schema_tests.sh"
+
+  # 5c. Monitor schema tests and cleanup
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: MonitorSchemaVMTests
+    waitFor: ['CreateSchemaTestVM']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        VM_NAME="kpm-schema-test-vm-${BUILD_ID}"
+        ZONE="${_ZONE}"
+        trap 'echo "Cleaning up VM..."; gcloud compute instances delete "$${VM_NAME}" --zone="$${ZONE}" --quiet || true' EXIT
+        ./scripts/vm-test-monitor.sh "$${VM_NAME}" "$${ZONE}"
+
+  # 6. Final validation: Containerized socket check for the production image
+  - name: 'gcr.io/cloud-builders/docker'
+    id: FinalSocketCheck
+    waitFor: ['MonitorVMTests', 'MonitorSchemaVMTests']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
         mkdir -p /workspace/socket
-        
-        echo "Starting production agent container..."
         docker run -d --name agent-verify \
           -v /workspace/socket:/run/container_launcher \
           '${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA}'
         
-        echo "Waiting for socket to be ready..."
+        # Wait for socket
         timeout 30s bash -c 'until [ -S /workspace/socket/kmaserver.sock ]; do sleep 1; done'
         
-        echo "Installing testing dependencies..."
-        pip install requests requests-unixsocket pytest jsonschema
+        # Basic API probe
+        docker run --rm --user root \
+          -v /workspace/socket:/socket \
+          curlimages/curl:latest -s --unix-socket /socket/kmaserver.sock http://localhost/v1/capabilities \
+          | grep "KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256"
         
-        echo "Running WSD API signature tests..."
-        export WSD_SOCKET_PATH="/workspace/socket/kmaserver.sock"
-        pytest tests/integration/test_wsd_api_signatures.py -v
-        
-        echo "Cleaning up agent container..."
         docker rm -f agent-verify
 
   # 7. Final step: Tag verified image as latest and push
   - name: 'gcr.io/cloud-builders/docker'
     id: ReleaseLatest
-    waitFor: ['WsdApiSignatureChecks']
+    waitFor: ['FinalSocketCheck']
     entrypoint: 'bash'
     args:
       - '-c'

@@ -24,6 +24,7 @@ echo "Starting KPM VM Test Startup Script..."
 # We use the metadata server to avoid hardcoding these values in the script.
 LOCATION=$(curl -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/attributes/location)
 IMAGE=$(curl -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/attributes/test_image)
+TEST_COMMAND=$(curl -f -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/attributes/test_command || echo "")
 
 if [ -z "$LOCATION" ] || [ -z "$IMAGE" ]; then
   echo "ERROR: Missing required metadata 'location' or 'test_image'."
@@ -42,7 +43,12 @@ docker pull "$IMAGE"
 
 echo "Starting test container..."
 # memfd_secret requires seccomp=unconfined on some COS versions or kernel configs
-docker run --rm --security-opt seccomp=unconfined "$IMAGE"
+if [ -n "$TEST_COMMAND" ]; then
+  echo "Running custom test command: $TEST_COMMAND"
+  docker run --rm --security-opt seccomp=unconfined --entrypoint /bin/bash "$IMAGE" -c "$TEST_COMMAND"
+else
+  docker run --rm --security-opt seccomp=unconfined "$IMAGE"
+fi
 exit_code=$?
 
 echo "KPM_TEST_CONTAINER_EXITED_WITH_STATUS: $exit_code"
