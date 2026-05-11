@@ -31,7 +31,7 @@ message GenerateKEMKeypairResponse {
 }
 
 message DecapAndSealRequest {
-  keymanager.KeyHandle key_handle = 1;
+  keymanager.KeyHandle key_handle = 1 [(buf.validate.field).required = true];
   keymanager.KemCiphertext ciphertext = 2;
   bytes aad = 3;
 }
@@ -59,14 +59,14 @@ message EnumerateKEMKeysResponse {
 }
 
 message DestroyKEMKeyRequest {
-  keymanager.KeyHandle key_handle = 1;
+  keymanager.KeyHandle key_handle = 1 [(buf.validate.field).required = true];
 }
 
 message DestroyKEMKeyResponse {
 }
 
 message GetKEMKeyRequest {
-  keymanager.KeyHandle key_handle = 1;
+  keymanager.KeyHandle key_handle = 1 [(buf.validate.field).required = true];
 }
 
 message GetKEMKeyResponse {

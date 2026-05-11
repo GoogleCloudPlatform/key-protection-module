@@ -695,10 +695,10 @@ const file_key_protection_service_proto_api_proto_rawDesc = "" +
 	"\x1aGenerateKEMKeypairResponse\x124\n" +
 	"\n" +
 	"key_handle\x18\x01 \x01(\v2\x15.keymanager.KeyHandleR\tkeyHandle\x128\n" +
-	"\vkem_pub_key\x18\x02 \x01(\v2\x18.keymanager.KemPublicKeyR\tkemPubKey\"\x98\x01\n" +
-	"\x13DecapAndSealRequest\x124\n" +
+	"\vkem_pub_key\x18\x02 \x01(\v2\x18.keymanager.KemPublicKeyR\tkemPubKey\"\xa0\x01\n" +
+	"\x13DecapAndSealRequest\x12<\n" +
 	"\n" +
-	"key_handle\x18\x01 \x01(\v2\x15.keymanager.KeyHandleR\tkeyHandle\x129\n" +
+	"key_handle\x18\x01 \x01(\v2\x15.keymanager.KeyHandleB\x06\xbaH\x03\xc8\x01\x01R\tkeyHandle\x129\n" +
 	"\n" +
 	"ciphertext\x18\x02 \x01(\v2\x19.keymanager.KemCiphertextR\n" +
 	"ciphertext\x12\x10\n" +
@@ -718,14 +718,14 @@ const file_key_protection_service_proto_api_proto_rawDesc = "" +
 	"\x17remaining_lifespan_secs\x18\x04 \x01(\x04R\x15remainingLifespanSecs\"x\n" +
 	"\x18EnumerateKEMKeysResponse\x12A\n" +
 	"\x04keys\x18\x01 \x03(\v2-.keymanager.key_protection_service.KEMKeyInfoR\x04keys\x12\x19\n" +
-	"\bhas_more\x18\x02 \x01(\bR\ahasMore\"L\n" +
-	"\x14DestroyKEMKeyRequest\x124\n" +
+	"\bhas_more\x18\x02 \x01(\bR\ahasMore\"T\n" +
+	"\x14DestroyKEMKeyRequest\x12<\n" +
 	"\n" +
-	"key_handle\x18\x01 \x01(\v2\x15.keymanager.KeyHandleR\tkeyHandle\"\x17\n" +
-	"\x15DestroyKEMKeyResponse\"H\n" +
-	"\x10GetKEMKeyRequest\x124\n" +
+	"key_handle\x18\x01 \x01(\v2\x15.keymanager.KeyHandleB\x06\xbaH\x03\xc8\x01\x01R\tkeyHandle\"\x17\n" +
+	"\x15DestroyKEMKeyResponse\"P\n" +
+	"\x10GetKEMKeyRequest\x12<\n" +
 	"\n" +
-	"key_handle\x18\x01 \x01(\v2\x15.keymanager.KeyHandleR\tkeyHandle\"\xc8\x01\n" +
+	"key_handle\x18\x01 \x01(\v2\x15.keymanager.KeyHandleB\x06\xbaH\x03\xc8\x01\x01R\tkeyHandle\"\xc8\x01\n" +
 	"\x11GetKEMKeyResponse\x128\n" +
 	"\vkem_pub_key\x18\x01 \x01(\v2\x18.keymanager.KemPublicKeyR\tkemPubKey\x12A\n" +
 	"\x0fbinding_pub_key\x18\x02 \x01(\v2\x19.keymanager.HpkePublicKeyR\rbindingPubKey\x126\n" +

@@ -1,12 +1,15 @@
 package keyprotectionservice
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
 
+	kpspb "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/proto"
 	keymanager "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestGrpcCodeFromError(t *testing.T) {
@@ -32,5 +35,80 @@ func TestGrpcCodeFromError(t *testing.T) {
 				t.Errorf("grpcCodeFromError(%v) = %v, want %v", tc.err, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestDecapAndSealValidation(t *testing.T) {
+	server := &grpcServer{
+		svc: &mockKPS{},
+	}
+
+	// Missing key_handle
+	req := &kpspb.DecapAndSealRequest{
+		// key_handle is omitted
+	}
+
+	_, err := server.DecapAndSeal(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("expected gRPC status error, got %v", err)
+	}
+
+	if st.Code() != codes.InvalidArgument {
+		t.Errorf("expected code InvalidArgument, got %v", st.Code())
+	}
+}
+
+func TestDestroyKEMKeyValidation(t *testing.T) {
+	server := &grpcServer{
+		svc: &mockKPS{},
+	}
+
+	// Missing key_handle
+	req := &kpspb.DestroyKEMKeyRequest{
+		// key_handle is omitted
+	}
+
+	_, err := server.DestroyKEMKey(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("expected gRPC status error, got %v", err)
+	}
+
+	if st.Code() != codes.InvalidArgument {
+		t.Errorf("expected code InvalidArgument, got %v", st.Code())
+	}
+}
+
+func TestGetKEMKeyValidation(t *testing.T) {
+	server := &grpcServer{
+		svc: &mockKPS{},
+	}
+
+	// Missing key_handle
+	req := &kpspb.GetKEMKeyRequest{
+		// key_handle is omitted
+	}
+
+	_, err := server.GetKEMKey(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("expected gRPC status error, got %v", err)
+	}
+
+	if st.Code() != codes.InvalidArgument {
+		t.Errorf("expected code InvalidArgument, got %v", st.Code())
 	}
 }
