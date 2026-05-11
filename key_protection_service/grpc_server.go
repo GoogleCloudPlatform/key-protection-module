@@ -8,8 +8,10 @@ import (
 	kpspb "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/proto"
 	keymanager "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto"
 	"github.com/google/uuid"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 // grpcServer is the gRPC server wrapper for the KeyProtectionService.
@@ -25,6 +27,18 @@ func NewGrpcServer(svc KeyProtectionService) kpspb.KeyProtectionServiceServer {
 	return &grpcServer{
 		svc: svc,
 	}
+}
+
+// ValidationInterceptor is a gRPC unary server interceptor that validates requests.
+func ValidationInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	msg, ok := req.(proto.Message)
+	if !ok {
+		return nil, status.Errorf(codes.Internal, "request is not a proto message")
+	}
+	if err := protovalidate.Validate(msg); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+	}
+	return handler(ctx, req)
 }
 
 // grpcCodeFromError maps an FFI status error to a gRPC code so the WSD client
@@ -51,10 +65,6 @@ func grpcCodeFromError(err error) codes.Code {
 
 // GetCapabilities retrieves the supported cryptographic algorithms.
 func (s *grpcServer) GetCapabilities(ctx context.Context, req *kpspb.GetCapabilitiesRequest) (*kpspb.GetCapabilitiesResponse, error) {
-	if err := protovalidate.Validate(req); err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
-	}
-
 	// For Bowcaster, KPS needs to report its own capabilities.
 	// Since Vanguard's WSD has the same list of supported algorithms,
 	// we will proxy this request to the service layer.
@@ -82,10 +92,6 @@ func (s *grpcServer) GetCapabilities(ctx context.Context, req *kpspb.GetCapabili
 
 // GenerateKEMKeypair generates a new KEM keypair.
 func (s *grpcServer) GenerateKEMKeypair(ctx context.Context, req *kpspb.GenerateKEMKeypairRequest) (*kpspb.GenerateKEMKeypairResponse, error) {
-	if err := protovalidate.Validate(req); err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
-	}
-
 	id, pubKey, err := s.svc.GenerateKEMKeypair(ctx, req.GetAlgo(), req.GetBindingPubKey().GetPublicKey(), req.GetLifespanSecs())
 	if err != nil {
 		return nil, status.Errorf(grpcCodeFromError(err), "failed to generate KEM keypair: %v", err)
@@ -102,10 +108,6 @@ func (s *grpcServer) GenerateKEMKeypair(ctx context.Context, req *kpspb.Generate
 
 // DecapAndSeal decapsulates and reseals a shared secret.
 func (s *grpcServer) DecapAndSeal(ctx context.Context, req *kpspb.DecapAndSealRequest) (*kpspb.DecapAndSealResponse, error) {
-	if err := protovalidate.Validate(req); err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
-	}
-
 	kemUUID, err := uuid.Parse(req.GetKeyHandle().GetHandle())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid KEM key handle: %v", err)
@@ -124,10 +126,6 @@ func (s *grpcServer) DecapAndSeal(ctx context.Context, req *kpspb.DecapAndSealRe
 
 // EnumerateKEMKeys enumerates active KEM keys.
 func (s *grpcServer) EnumerateKEMKeys(ctx context.Context, req *kpspb.EnumerateKEMKeysRequest) (*kpspb.EnumerateKEMKeysResponse, error) {
-	if err := protovalidate.Validate(req); err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
-	}
-
 	keys, hasMore, err := s.svc.EnumerateKEMKeys(ctx, int(req.GetLimit()), int(req.GetOffset()))
 	if err != nil {
 		return nil, status.Errorf(grpcCodeFromError(err), "failed to enumerate KEM keys: %v", err)
@@ -151,10 +149,6 @@ func (s *grpcServer) EnumerateKEMKeys(ctx context.Context, req *kpspb.EnumerateK
 
 // DestroyKEMKey destroys a KEM key.
 func (s *grpcServer) DestroyKEMKey(ctx context.Context, req *kpspb.DestroyKEMKeyRequest) (*kpspb.DestroyKEMKeyResponse, error) {
-	if err := protovalidate.Validate(req); err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
-	}
-
 	kemUUID, err := uuid.Parse(req.GetKeyHandle().GetHandle())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid KEM key handle: %v", err)
@@ -169,10 +163,6 @@ func (s *grpcServer) DestroyKEMKey(ctx context.Context, req *kpspb.DestroyKEMKey
 
 // GetKEMKey retrieves a KEM key's info.
 func (s *grpcServer) GetKEMKey(ctx context.Context, req *kpspb.GetKEMKeyRequest) (*kpspb.GetKEMKeyResponse, error) {
-	if err := protovalidate.Validate(req); err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
-	}
-
 	kemUUID, err := uuid.Parse(req.GetKeyHandle().GetHandle())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid KEM key handle: %v", err)

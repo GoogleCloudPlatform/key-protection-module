@@ -8,6 +8,7 @@ import (
 
 	kpspb "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/proto"
 	keymanager "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -38,17 +39,9 @@ func TestGrpcCodeFromError(t *testing.T) {
 	}
 }
 
-func TestDecapAndSealValidation(t *testing.T) {
-	server := &grpcServer{
-		svc: &mockKPS{},
-	}
-
-	// Missing key_handle
-	req := &kpspb.DecapAndSealRequest{
-		// key_handle is omitted
-	}
-
-	_, err := server.DecapAndSeal(context.Background(), req)
+func testValidation(t *testing.T, req interface{}, handler grpc.UnaryHandler) {
+	t.Helper()
+	_, err := ValidationInterceptor(context.Background(), req, &grpc.UnaryServerInfo{}, handler)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -61,6 +54,18 @@ func TestDecapAndSealValidation(t *testing.T) {
 	if st.Code() != codes.InvalidArgument {
 		t.Errorf("expected code InvalidArgument, got %v", st.Code())
 	}
+}
+
+func TestDecapAndSealValidation(t *testing.T) {
+	server := &grpcServer{
+		svc: &mockKPS{},
+	}
+
+	req := &kpspb.DecapAndSealRequest{}
+
+	testValidation(t, req, func(ctx context.Context, r interface{}) (interface{}, error) {
+		return server.DecapAndSeal(ctx, r.(*kpspb.DecapAndSealRequest))
+	})
 }
 
 func TestDestroyKEMKeyValidation(t *testing.T) {
@@ -68,24 +73,11 @@ func TestDestroyKEMKeyValidation(t *testing.T) {
 		svc: &mockKPS{},
 	}
 
-	// Missing key_handle
-	req := &kpspb.DestroyKEMKeyRequest{
-		// key_handle is omitted
-	}
+	req := &kpspb.DestroyKEMKeyRequest{}
 
-	_, err := server.DestroyKEMKey(context.Background(), req)
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-
-	st, ok := status.FromError(err)
-	if !ok {
-		t.Fatalf("expected gRPC status error, got %v", err)
-	}
-
-	if st.Code() != codes.InvalidArgument {
-		t.Errorf("expected code InvalidArgument, got %v", st.Code())
-	}
+	testValidation(t, req, func(ctx context.Context, r interface{}) (interface{}, error) {
+		return server.DestroyKEMKey(ctx, r.(*kpspb.DestroyKEMKeyRequest))
+	})
 }
 
 func TestGetKEMKeyValidation(t *testing.T) {
@@ -93,22 +85,9 @@ func TestGetKEMKeyValidation(t *testing.T) {
 		svc: &mockKPS{},
 	}
 
-	// Missing key_handle
-	req := &kpspb.GetKEMKeyRequest{
-		// key_handle is omitted
-	}
+	req := &kpspb.GetKEMKeyRequest{}
 
-	_, err := server.GetKEMKey(context.Background(), req)
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-
-	st, ok := status.FromError(err)
-	if !ok {
-		t.Fatalf("expected gRPC status error, got %v", err)
-	}
-
-	if st.Code() != codes.InvalidArgument {
-		t.Errorf("expected code InvalidArgument, got %v", st.Code())
-	}
+	testValidation(t, req, func(ctx context.Context, r interface{}) (interface{}, error) {
+		return server.GetKEMKey(ctx, r.(*kpspb.GetKEMKeyRequest))
+	})
 }
