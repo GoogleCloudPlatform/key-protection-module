@@ -471,7 +471,7 @@ var File_workload_service_proto_api_proto protoreflect.FileDescriptor
 
 const file_workload_service_proto_api_proto_rawDesc = "" +
 	"\n" +
-	" workload_service/proto/api.proto\x12\x1bkeymanager.workload_service\x1a km_common/proto/algorithms.proto\x1a\"km_common/proto/crypto_types.proto\x1a\x1dkm_common/proto/payload.proto\x1a\x1bbuf/validate/validate.proto\"l\n" +
+	" workload_service/proto/api.proto\x12\x1bkeymanager.workload_service\x1a\x1bbuf/validate/validate.proto\x1a km_common/proto/algorithms.proto\x1a\"km_common/proto/crypto_types.proto\x1a\x1dkm_common/proto/payload.proto\"l\n" +
 	"\x17GetCapabilitiesResponse\x12Q\n" +
 	"\x14supported_algorithms\x18\x01 \x03(\v2\x1e.keymanager.SupportedAlgorithmR\x13supportedAlgorithms\"\x87\x01\n" +
 	"\x12GenerateKeyRequest\x12B\n" +
