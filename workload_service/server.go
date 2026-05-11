@@ -316,10 +316,6 @@ func New(_ context.Context, socketPath string, mode keymanager.KeyProtectionMech
 	switch mode {
 	case keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED:
 		kps = &keyProtectionService{}
-	// TODO: The `main` package to host the standalone gRPC server for the
-	// KPS VM is not yet implemented. This will be added in a follow-up PR
-	// as part of the containerization effort. Until then, RPCs
-	// in this mode will fail because nothing is listening.
 	case keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM:
 		if kpsVMIP == "" {
 			return nil, fmt.Errorf("KPS VM IP must be provided when using KEY_PROTECTION_VM mode")
