@@ -312,7 +312,6 @@ type Server struct {
 	// todo: add logging mechanism here
 }
 
-
 var (
 	// ClaimsResponseTimeout is the maximum time to wait for the caller to receive
 	// the result of a GetKeyClaims request before timing out.
@@ -358,6 +357,9 @@ func New(_ context.Context, socketPath string, mode keymanager.KeyProtectionMech
 	}
 	s, err := NewServer(kps, &workloadService{}, socketPath)
 	if err != nil {
+		if conn != nil {
+			conn.Close()
+		}
 		return nil, err
 	}
 	s.conn = conn
