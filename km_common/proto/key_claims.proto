@@ -64,3 +64,8 @@ message KeyClaims {
     VmProtectionKeyClaims vm_key_claims = 2;
   }
 }
+
+// Service for retrieving key claims.
+service KeyClaimsService {
+  rpc GetKeyClaims(GetKeyClaimsRequest) returns (KeyClaims);
+}

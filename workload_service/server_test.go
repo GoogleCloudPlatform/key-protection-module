@@ -2,10 +2,8 @@ package workloadservice
 
 import (
 	"bytes"
-	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -31,7 +29,6 @@ func newTestServer(t *testing.T, kemGen kps.KeyProtectionService, bindingGen Wor
 	}
 	t.Cleanup(func() {
 		srv.listener.Close()
-		close(srv.claimsChan)
 	})
 	return srv
 }
@@ -783,7 +780,7 @@ func TestHandleGetCapabilities(t *testing.T) {
 	}
 }
 
-func TestProcessClaims(t *testing.T) {
+func TestHandleGetClaims(t *testing.T) {
 	bindingUUID := uuid.New()
 	kemUUID := uuid.New()
 	bindingPubKey := make([]byte, 32)
@@ -819,148 +816,108 @@ func TestProcessClaims(t *testing.T) {
 	srv.kemToBindingMap[kemUUID] = bindingUUID
 
 	t.Run("BindingClaims", func(t *testing.T) {
-		respChan := make(chan *ClaimsResult, 1)
 		req := &keymanager.GetKeyClaimsRequest{
 			KeyHandle: &keymanager.KeyHandle{Handle: kemUUID.String()},
 			KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
 		}
-		srv.claimsChan <- &ClaimsCall{Request: req, RespChan: respChan}
-
-		select {
-		case res := <-respChan:
-			if res.Err != nil {
-				t.Fatalf("unexpected error: %v", res.Err)
-			}
-			claims := res.Reply.GetVmBindingClaims()
-			if claims == nil {
-				t.Fatal("expected VmBindingClaims")
-			}
-			if !bytes.Equal(claims.BindingPubKey.PublicKey, bindingPubKey) {
-				t.Errorf("expected binding pubkey %v, got %v", bindingPubKey, claims.BindingPubKey.PublicKey)
-			}
-			if claims.BindingPubKey.Algorithm.Kem != expectedAlgo.Kem ||
-				claims.BindingPubKey.Algorithm.Kdf != expectedAlgo.Kdf ||
-				claims.BindingPubKey.Algorithm.Aead != expectedAlgo.Aead {
-				t.Errorf("expected binding algorithm %v, got %v", expectedAlgo, claims.BindingPubKey.Algorithm)
-			}
-		case <-time.After(2 * time.Second):
-			t.Fatal("timed out waiting for response")
+		res, err := srv.handleGetClaims(req)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		claims := res.GetVmBindingClaims()
+		if claims == nil {
+			t.Fatal("expected VmBindingClaims")
+		}
+		if !bytes.Equal(claims.BindingPubKey.PublicKey, bindingPubKey) {
+			t.Errorf("expected binding pubkey %v, got %v", bindingPubKey, claims.BindingPubKey.PublicKey)
+		}
+		if claims.BindingPubKey.Algorithm.Kem != expectedAlgo.Kem ||
+			claims.BindingPubKey.Algorithm.Kdf != expectedAlgo.Kdf ||
+			claims.BindingPubKey.Algorithm.Aead != expectedAlgo.Aead {
+			t.Errorf("expected binding algorithm %v, got %v", expectedAlgo, claims.BindingPubKey.Algorithm)
 		}
 	})
 
 	t.Run("KemClaims", func(t *testing.T) {
-		respChan := make(chan *ClaimsResult, 1)
 		req := &keymanager.GetKeyClaimsRequest{
 			KeyHandle: &keymanager.KeyHandle{Handle: kemUUID.String()},
 			KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
 		}
-		srv.claimsChan <- &ClaimsCall{Request: req, RespChan: respChan}
-
-		select {
-		case res := <-respChan:
-			if res.Err != nil {
-				t.Fatalf("unexpected error: %v", res.Err)
-			}
-			claims := res.Reply.GetVmKeyClaims()
-			if claims == nil {
-				t.Fatal("expected VmKeyClaims")
-			}
-			if !bytes.Equal(claims.KemPubKey.PublicKey, kemPubKey) {
-				t.Errorf("expected KEM pubkey %v, got %v", kemPubKey, claims.KemPubKey.PublicKey)
-			}
-			if claims.KemPubKey.Algorithm != expectedAlgo.Kem {
-				t.Errorf("expected KEM algorithm %v, got %v", expectedAlgo.Kem, claims.KemPubKey.Algorithm)
-			}
-			if !bytes.Equal(claims.BindingPubKey.PublicKey, bindingPubKey) {
-				t.Errorf("expected binding pubkey %v, got %v", bindingPubKey, claims.BindingPubKey.PublicKey)
-			}
-			if claims.BindingPubKey.Algorithm.Kem != expectedAlgo.Kem ||
-				claims.BindingPubKey.Algorithm.Kdf != expectedAlgo.Kdf ||
-				claims.BindingPubKey.Algorithm.Aead != expectedAlgo.Aead {
-				t.Errorf("expected binding algorithm %v, got %v", expectedAlgo, claims.BindingPubKey.Algorithm)
-			}
-			if claims.ExpirationTime <= float64(time.Now().Unix()) {
-				t.Errorf("expected expiration time to be in the future, got %v", claims.ExpirationTime)
-			}
-			if claims.RemainingLifespan.AsDuration() <= 0 { //nolint:staticcheck
-				t.Errorf("expected positive remaining lifespan, got %v", claims.RemainingLifespan.AsDuration()) //nolint:staticcheck
-			}
-		case <-time.After(2 * time.Second):
-			t.Fatal("timed out waiting for response")
+		res, err := srv.handleGetClaims(req)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		claims := res.GetVmKeyClaims()
+		if claims == nil {
+			t.Fatal("expected VmKeyClaims")
+		}
+		if !bytes.Equal(claims.KemPubKey.PublicKey, kemPubKey) {
+			t.Errorf("expected KEM pubkey %v, got %v", kemPubKey, claims.KemPubKey.PublicKey)
+		}
+		if claims.KemPubKey.Algorithm != expectedAlgo.Kem {
+			t.Errorf("expected KEM algorithm %v, got %v", expectedAlgo.Kem, claims.KemPubKey.Algorithm)
+		}
+		if !bytes.Equal(claims.BindingPubKey.PublicKey, bindingPubKey) {
+			t.Errorf("expected binding pubkey %v, got %v", bindingPubKey, claims.BindingPubKey.PublicKey)
+		}
+		if claims.BindingPubKey.Algorithm.Kem != expectedAlgo.Kem ||
+			claims.BindingPubKey.Algorithm.Kdf != expectedAlgo.Kdf ||
+			claims.BindingPubKey.Algorithm.Aead != expectedAlgo.Aead {
+			t.Errorf("expected binding algorithm %v, got %v", expectedAlgo, claims.BindingPubKey.Algorithm)
+		}
+		if claims.ExpirationTime <= float64(time.Now().Unix()) {
+			t.Errorf("expected expiration time to be in the future, got %v", claims.ExpirationTime)
+		}
+		if claims.RemainingLifespan.AsDuration() <= 0 { //nolint:staticcheck
+			t.Errorf("expected positive remaining lifespan, got %v", claims.RemainingLifespan.AsDuration()) //nolint:staticcheck
 		}
 	})
 
 	t.Run("InvalidUUID", func(t *testing.T) {
-		respChan := make(chan *ClaimsResult, 1)
 		req := &keymanager.GetKeyClaimsRequest{
 			KeyHandle: &keymanager.KeyHandle{Handle: "invalid-uuid"},
 			KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
 		}
-		srv.claimsChan <- &ClaimsCall{Request: req, RespChan: respChan}
-
-		select {
-		case res := <-respChan:
-			if res.Err == nil {
-				t.Fatal("expected error for invalid UUID")
-			}
-		case <-time.After(2 * time.Second):
-			t.Fatal("timed out waiting for response")
+		_, err := srv.handleGetClaims(req)
+		if err == nil {
+			t.Fatal("expected error for invalid UUID")
 		}
 	})
 
 	t.Run("UnsupportedKeyType", func(t *testing.T) {
-		respChan := make(chan *ClaimsResult, 1)
 		req := &keymanager.GetKeyClaimsRequest{
 			KeyHandle: &keymanager.KeyHandle{Handle: bindingUUID.String()},
 			KeyType:   keymanager.KeyType_KEY_TYPE_UNSPECIFIED,
 		}
-		srv.claimsChan <- &ClaimsCall{Request: req, RespChan: respChan}
-
-		select {
-		case res := <-respChan:
-			if res.Err == nil {
-				t.Fatal("expected error for unsupported key type")
-			}
-			if !strings.Contains(res.Err.Error(), "unsupported key type") {
-				t.Errorf("expected error to contain 'unsupported key type', got %v", res.Err)
-			}
-		case <-time.After(2 * time.Second):
-			t.Fatal("timed out waiting for response")
+		_, err := srv.handleGetClaims(req)
+		if err == nil {
+			t.Fatal("expected error for unsupported key type")
+		}
+		if !strings.Contains(err.Error(), "unsupported key type") {
+			t.Errorf("expected error to contain 'unsupported key type', got %v", err)
 		}
 	})
 
 	t.Run("BindingKeyNotFound", func(t *testing.T) {
-		respChan := make(chan *ClaimsResult, 1)
-		// Use a random UUID that isn't the mock's UUID
 		notFoundUUID := uuid.New()
 		req := &keymanager.GetKeyClaimsRequest{
 			KeyHandle: &keymanager.KeyHandle{Handle: notFoundUUID.String()},
 			KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
 		}
 
-		// Update mock to return error for anything other than its set UUID
-		// Actually, the current mock returns its fixed pubKey/err regardless of input ID.
-		// Let's create a new server with a mock that returns error.
 		wsErr := &mockWorkloadService{err: fmt.Errorf("not found")}
 		srvErr := newTestServer(t, kps, wsErr)
 
-		srvErr.claimsChan <- &ClaimsCall{Request: req, RespChan: respChan}
-
-		select {
-		case res := <-respChan:
-			if res.Err == nil {
-				t.Fatal("expected error for binding key not found")
-			}
-			if !strings.Contains(res.Err.Error(), "failed to retrieve binding key claims") {
-				t.Errorf("expected error to contain 'failed to retrieve binding key claims', got %v", res.Err)
-			}
-		case <-time.After(2 * time.Second):
-			t.Fatal("timed out waiting for response")
+		_, err := srvErr.handleGetClaims(req)
+		if err == nil {
+			t.Fatal("expected error for binding key not found")
+		}
+		if !strings.Contains(err.Error(), "failed to retrieve binding key claims") {
+			t.Errorf("expected error to contain 'failed to retrieve binding key claims', got %v", err)
 		}
 	})
 
 	t.Run("KemKeyNotFound", func(t *testing.T) {
-		respChan := make(chan *ClaimsResult, 1)
 		req := &keymanager.GetKeyClaimsRequest{
 			KeyHandle: &keymanager.KeyHandle{Handle: kemUUID.String()},
 			KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
@@ -969,18 +926,12 @@ func TestProcessClaims(t *testing.T) {
 		kpsErr := &mockKeyProtectionService{err: fmt.Errorf("not found")}
 		srvErr := newTestServer(t, kpsErr, ws)
 
-		srvErr.claimsChan <- &ClaimsCall{Request: req, RespChan: respChan}
-
-		select {
-		case res := <-respChan:
-			if res.Err == nil {
-				t.Fatal("expected error for KEM key not found")
-			}
-			if !strings.Contains(res.Err.Error(), "failed to get KEM key") {
-				t.Errorf("expected error to contain 'failed to get KEM key', got %v", res.Err)
-			}
-		case <-time.After(2 * time.Second):
-			t.Fatal("timed out waiting for response")
+		_, err := srvErr.handleGetClaims(req)
+		if err == nil {
+			t.Fatal("expected error for KEM key not found")
+		}
+		if !strings.Contains(err.Error(), "failed to get KEM key") {
+			t.Errorf("expected error to contain 'failed to get KEM key', got %v", err)
 		}
 	})
 }
@@ -1313,146 +1264,4 @@ func TestHandleDecapsUnsupportedAlgorithm(t *testing.T) {
 	}
 }
 
-func TestProcessClaimsTimeout(t *testing.T) {
-	oldTimeout := ClaimsResponseTimeout
-	ClaimsResponseTimeout = 10 * time.Millisecond
-	defer func() { ClaimsResponseTimeout = oldTimeout }()
 
-	srv := newTestServer(t, &mockKeyProtectionService{}, &mockWorkloadService{})
-	// processClaims is already started in newTestServer -> NewServer -> New
-
-	respChan1 := make(chan *ClaimsResult) // Unbuffered
-	req1 := &keymanager.GetKeyClaimsRequest{
-		KeyHandle: &keymanager.KeyHandle{Handle: uuid.New().String()},
-		KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
-	}
-
-	// 1. Send first request and DO NOT read from it.
-	// This should timeout in 10ms.
-	srv.claimsChan <- &ClaimsCall{Request: req1, RespChan: respChan1}
-
-	// 2. Send second request and read from it.
-	// We need a valid UUID in the map for this to succeed easily.
-	kemUUID := uuid.New()
-	bindingUUID := uuid.New()
-	srv.mu.Lock()
-	srv.kemToBindingMap[kemUUID] = bindingUUID
-	srv.mu.Unlock()
-
-	respChan2 := make(chan *ClaimsResult, 1)
-	req2 := &keymanager.GetKeyClaimsRequest{
-		KeyHandle: &keymanager.KeyHandle{Handle: kemUUID.String()},
-		KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
-	}
-
-	// Give it a bit of time for the first one to timeout
-	time.Sleep(20 * time.Millisecond)
-
-	srv.claimsChan <- &ClaimsCall{Request: req2, RespChan: respChan2}
-
-	select {
-	case res := <-respChan2:
-		if res.Err != nil {
-			t.Errorf("expected no error for second request, got: %v", res.Err)
-		}
-	case <-time.After(1 * time.Second):
-		t.Fatal("timed out waiting for second request response - background worker might be blocked!")
-	}
-}
-
-func TestGetClaimsFromChannel(t *testing.T) {
-	keyHandle := "test-uuid-123"
-	expectedReply := &keymanager.KeyClaims{
-		Claims: &keymanager.KeyClaims_VmBindingClaims{},
-	}
-
-	tests := []struct {
-		name           string
-		keyType        keymanager.KeyType
-		workerBehavior func(call *ClaimsCall)
-		ctxTimeout     time.Duration
-		wantErr        string
-	}{
-		{
-			name:    "success",
-			keyType: keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
-			workerBehavior: func(call *ClaimsCall) {
-				call.RespChan <- &ClaimsResult{Reply: expectedReply}
-			},
-			ctxTimeout: 5 * time.Second,
-			wantErr:    "",
-		},
-		{
-			name:    "worker returns error",
-			keyType: keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
-			workerBehavior: func(call *ClaimsCall) {
-				call.RespChan <- &ClaimsResult{Err: errors.New("db connection failed")}
-			},
-			ctxTimeout: 5 * time.Second,
-			wantErr:    "worker error: db connection failed",
-		},
-		{
-			name:    "context already cancelled",
-			keyType: keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
-			workerBehavior: func(_ *ClaimsCall) {
-				// Worker won't even be reached if ctx is canceled early
-			},
-			ctxTimeout: -1, // Force immediate cancel
-			wantErr:    context.Canceled.Error(),
-		},
-		{
-			name:    "response timeout",
-			keyType: keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
-			workerBehavior: func(_ *ClaimsCall) {
-				// Simulate worker hanging by doing nothing
-			},
-			ctxTimeout: 5 * time.Second,
-			wantErr:    "timed out waiting for processClaims",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			claimsChan := make(chan *ClaimsCall, 1)
-			s := &Server{claimsChan: claimsChan}
-
-			var ctx context.Context
-			var cancel context.CancelFunc
-			if tt.ctxTimeout < 0 {
-				ctx, cancel = context.WithCancel(context.Background())
-				cancel() // Pre-cancel
-			} else {
-				ctx, cancel = context.WithTimeout(context.Background(), tt.ctxTimeout)
-				defer cancel()
-			}
-
-			go func() {
-				select {
-				case call := <-claimsChan:
-					tt.workerBehavior(call)
-				case <-ctx.Done():
-					return
-				}
-			}()
-
-			result, err := s.GetKeyClaims(ctx, keyHandle, tt.keyType)
-
-			if tt.wantErr != "" {
-				if err == nil {
-					t.Fatalf("expected error containing %q, got nil", tt.wantErr)
-				}
-				if !strings.Contains(err.Error(), tt.wantErr) {
-					t.Errorf("expected error %q, got %q", tt.wantErr, err.Error())
-				}
-				return
-			}
-
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if result != expectedReply {
-				t.Errorf("result mismatch: expected %v, got %v", expectedReply, result)
-			}
-		})
-	}
-}
