@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+package keymanager.key_protection_service;
+
+import "buf/validate/validate.proto";
+import "km_common/proto/algorithms.proto";
+import "km_common/proto/crypto_types.proto";
+import "km_common/proto/key_claims.proto";
+import "km_common/proto/payload.proto";
+
+option go_package = "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/proto;kpspb";
+
+service KeyProtectionService {
+  rpc GenerateKEMKeypair(GenerateKEMKeypairRequest) returns (GenerateKEMKeypairResponse);
+  rpc DecapAndSeal(DecapAndSealRequest) returns (DecapAndSealResponse);
+  rpc EnumerateKEMKeys(EnumerateKEMKeysRequest) returns (EnumerateKEMKeysResponse);
+  rpc DestroyKEMKey(DestroyKEMKeyRequest) returns (DestroyKEMKeyResponse);
+  rpc GetKEMKey(GetKEMKeyRequest) returns (GetKEMKeyResponse);
+  rpc GetCapabilities(GetCapabilitiesRequest) returns (GetCapabilitiesResponse);
+}
+
+message GenerateKEMKeypairRequest {
+  keymanager.HpkeAlgorithm algo = 1 [(buf.validate.field).required = true];
+  keymanager.HpkePublicKey binding_pub_key = 2;
+  uint64 lifespan_secs = 3;
+}
+
+message GenerateKEMKeypairResponse {
+  keymanager.KeyHandle key_handle = 1;
+  keymanager.KemPublicKey kem_pub_key = 2;
+}
+
+message DecapAndSealRequest {
+  keymanager.KeyHandle key_handle = 1 [(buf.validate.field).required = true];
+  keymanager.KemCiphertext ciphertext = 2;
+  bytes aad = 3;
+}
+
+message DecapAndSealResponse {
+  bytes seal_enc = 1;
+  bytes sealed_ct = 2;
+}
+
+message EnumerateKEMKeysRequest {
+  int32 limit = 1 [
+    (buf.validate.field).int32.gt = 0,
+    (buf.validate.field).int32.lte = 100
+  ];
+  int32 offset = 2 [(buf.validate.field).int32.gte = 0];
+}
+
+message KEMKeyInfo {
+  keymanager.KeyHandle key_handle = 1;
+  keymanager.HpkeAlgorithm algorithm = 2;
+  bytes kem_pub_key = 3;
+  uint64 remaining_lifespan_secs = 4;
+}
+
+message EnumerateKEMKeysResponse {
+  repeated KEMKeyInfo keys = 1;
+  bool has_more = 2;
+}
+
+message DestroyKEMKeyRequest {
+  keymanager.KeyHandle key_handle = 1 [(buf.validate.field).required = true];
+}
+
+message DestroyKEMKeyResponse {}
+
+message GetKEMKeyRequest {
+  keymanager.KeyHandle key_handle = 1 [(buf.validate.field).required = true];
+}
+
+message GetKEMKeyResponse {
+  keymanager.KemPublicKey kem_pub_key = 1;
+  keymanager.HpkePublicKey binding_pub_key = 2;
+  uint64 remaining_lifespan_secs = 3;
+}
+
+message GetCapabilitiesRequest {}
+
+message GetCapabilitiesResponse {
+  repeated keymanager.SupportedAlgorithm supported_algorithms = 1;
+}
