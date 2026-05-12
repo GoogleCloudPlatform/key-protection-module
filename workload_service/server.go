@@ -40,6 +40,7 @@ import (
 const (
 	defaultKpsPort        = 50050
 	heartbeatInterval     = 30 * time.Second
+	heartbeatTimeout      = 5 * time.Second
 	defaultInitialBackoff = 1 * time.Second
 	defaultMaxBackoff     = 128 * time.Second
 )
@@ -943,7 +944,9 @@ func (s *Server) performHeartbeat(ctx context.Context, client kpsapi.KeyProtecti
 	var timer *time.Timer
 
 	for {
-		resp, err := client.Heartbeat(ctx, &kpsapi.HeartbeatRequest{})
+		rpcCtx, cancel := context.WithTimeout(ctx, heartbeatTimeout)
+		resp, err := client.Heartbeat(rpcCtx, &kpsapi.HeartbeatRequest{})
+		cancel()
 		if err == nil {
 			// Success: reset and return
 			if timer != nil {
