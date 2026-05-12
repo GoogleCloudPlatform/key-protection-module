@@ -1,9 +1,10 @@
 substitutions:
   "_OUTPUT_IMAGE_NAME": ""
-  "_OUTPUT_IMAGE_PROJECT": "chewbacca-images-dev"
+  "_OUTPUT_IMAGE_PROJECT": ""
   "_BASE_IMAGE_GCS_DIR": ""
   "_IMAGE_ENV": ""
   "_KPS_DOCKER_IMAGE_REF": ""
+  "_OUTPUT_IMAGE_GCS_DIR": ""
 
 steps:
   - name: "gcr.io/cloud-builders/gcloud"
@@ -50,7 +51,7 @@ steps:
         rm -rf /workspace/oem-install
         mkdir -p /workspace/oem-install/kps
 
-        cp ./image/entrypoint.sh /workspace/oem-install/kps/entrypoint.sh
+        cp ./image/entrypoint.sh /workspace/oem-install/entrypoint.sh
         cp ./image/keymanager.service /workspace/oem-install/kps/keymanager.service
         cp ./image/attestation.service /workspace/oem-install/kps/attestation.service
         cp ./image/attestation_agent /workspace/oem-install/kps/attestation_agent
@@ -64,7 +65,7 @@ steps:
         fi
 
         chmod +x /workspace/oem-install/kps/kps_runner.sh || true
-        chmod +x /workspace/oem-install/kps/entrypoint.sh || true
+        chmod +x /workspace/oem-install/entrypoint.sh || true
         chmod +x /workspace/oem-install/kps/exit_script.sh || true
         chmod +x /workspace/oem-install/kps/attestation_agent || true
 
@@ -165,7 +166,7 @@ steps:
         "storage",
         "cp",
         "./out_image.tar.gz",
-        "gs://chewbacca-guest-acos/kps/kps-acos-build-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz",
+        "${_OUTPUT_IMAGE_GCS_DIR}/${_OUTPUT_IMAGE_NAME}.tar.gz",
       ]
   - name: "gcr.io/cloud-builders/gcloud"
     id: "CreateGCEImage"
@@ -177,7 +178,7 @@ steps:
         "create",
         "${_OUTPUT_IMAGE_NAME}",
         "--source-uri",
-        "gs://chewbacca-guest-acos/kps/kps-acos-build-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz",
+        "${_OUTPUT_IMAGE_GCS_DIR}/${_OUTPUT_IMAGE_NAME}.tar.gz",
         "--project",
         "${_OUTPUT_IMAGE_PROJECT}",
         "--guest-os-features=GVNIC,IDPF,VIRTIO_SCSI_MULTIQUEUE,UEFI_COMPATIBLE,TDX_CAPABLE,SEV_CAPABLE,SEV_LIVE_MIGRATABLE_V2,SEV_SNP_CAPABLE,SEV_LIVE_MIGRATABLE",
