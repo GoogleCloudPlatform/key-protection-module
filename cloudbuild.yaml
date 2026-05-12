@@ -118,7 +118,7 @@ steps:
           --provisioning-model=SPOT \
           --scopes=cloud-platform \
           --metadata-from-file=startup-script=scripts/vm-test-startup.sh \
-          --metadata="location=${LOCATION},image=${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA},docker_env=KEY_PROTECTION_MECHANISM=KEY_PROTECTION_VM SERVICE_ROLE=KPS,docker_args=-p 50050:50050"
+          --metadata="location=${LOCATION},image=${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA},docker_env=KEY_PROTECTION_MECHANISM=KEY_PROTECTION_VM SERVICE_ROLE=SERVICE_ROLE_KPS,docker_args=-p 50050:50050"
         
         # Get internal IP and save to workspace
         gcloud compute instances describe "$${VM_NAME}" \
@@ -147,7 +147,7 @@ steps:
           --provisioning-model=SPOT \
           --scopes=cloud-platform \
           --metadata-from-file=startup-script=scripts/vm-test-startup.sh \
-          --metadata="location=${LOCATION},image=${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA},docker_env=KEY_PROTECTION_MECHANISM=KEY_PROTECTION_VM SERVICE_ROLE=WSD KPS_IP=$${KPS_IP}"
+          --metadata="location=${LOCATION},image=${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA},docker_env=KEY_PROTECTION_MECHANISM=KEY_PROTECTION_VM SERVICE_ROLE=SERVICE_ROLE_WSD KPS_IP=$${KPS_IP}"
 
   # Monitor Heartbeat and Cleanup
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
