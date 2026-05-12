@@ -603,91 +603,11 @@ func (x *GetKEMKeyResponse) GetRemainingLifespanSecs() uint64 {
 	return 0
 }
 
-type GetCapabilitiesRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *GetCapabilitiesRequest) Reset() {
-	*x = GetCapabilitiesRequest{}
-	mi := &file_key_protection_service_proto_api_proto_msgTypes[11]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *GetCapabilitiesRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*GetCapabilitiesRequest) ProtoMessage() {}
-
-func (x *GetCapabilitiesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_key_protection_service_proto_api_proto_msgTypes[11]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use GetCapabilitiesRequest.ProtoReflect.Descriptor instead.
-func (*GetCapabilitiesRequest) Descriptor() ([]byte, []int) {
-	return file_key_protection_service_proto_api_proto_rawDescGZIP(), []int{11}
-}
-
-type GetCapabilitiesResponse struct {
-	state               protoimpl.MessageState      `protogen:"open.v1"`
-	SupportedAlgorithms []*proto.SupportedAlgorithm `protobuf:"bytes,1,rep,name=supported_algorithms,json=supportedAlgorithms,proto3" json:"supported_algorithms,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
-}
-
-func (x *GetCapabilitiesResponse) Reset() {
-	*x = GetCapabilitiesResponse{}
-	mi := &file_key_protection_service_proto_api_proto_msgTypes[12]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *GetCapabilitiesResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*GetCapabilitiesResponse) ProtoMessage() {}
-
-func (x *GetCapabilitiesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_key_protection_service_proto_api_proto_msgTypes[12]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use GetCapabilitiesResponse.ProtoReflect.Descriptor instead.
-func (*GetCapabilitiesResponse) Descriptor() ([]byte, []int) {
-	return file_key_protection_service_proto_api_proto_rawDescGZIP(), []int{12}
-}
-
-func (x *GetCapabilitiesResponse) GetSupportedAlgorithms() []*proto.SupportedAlgorithm {
-	if x != nil {
-		return x.SupportedAlgorithms
-	}
-	return nil
-}
-
 var File_key_protection_service_proto_api_proto protoreflect.FileDescriptor
 
 const file_key_protection_service_proto_api_proto_rawDesc = "" +
 	"\n" +
-	"&key_protection_service/proto/api.proto\x12!keymanager.key_protection_service\x1a km_common/proto/algorithms.proto\x1a\"km_common/proto/crypto_types.proto\x1a km_common/proto/key_claims.proto\x1a\x1dkm_common/proto/payload.proto\x1a\x1bbuf/validate/validate.proto\"\xba\x01\n" +
+	"&key_protection_service/proto/api.proto\x12!keymanager.key_protection_service\x1a\x1bbuf/validate/validate.proto\x1a km_common/proto/algorithms.proto\x1a\"km_common/proto/crypto_types.proto\x1a km_common/proto/key_claims.proto\x1a\x1dkm_common/proto/payload.proto\"\xba\x01\n" +
 	"\x19GenerateKEMKeypairRequest\x125\n" +
 	"\x04algo\x18\x01 \x01(\v2\x19.keymanager.HpkeAlgorithmB\x06\xbaH\x03\xc8\x01\x01R\x04algo\x12A\n" +
 	"\x0fbinding_pub_key\x18\x02 \x01(\v2\x19.keymanager.HpkePublicKeyR\rbindingPubKey\x12#\n" +
@@ -729,17 +649,13 @@ const file_key_protection_service_proto_api_proto_rawDesc = "" +
 	"\x11GetKEMKeyResponse\x128\n" +
 	"\vkem_pub_key\x18\x01 \x01(\v2\x18.keymanager.KemPublicKeyR\tkemPubKey\x12A\n" +
 	"\x0fbinding_pub_key\x18\x02 \x01(\v2\x19.keymanager.HpkePublicKeyR\rbindingPubKey\x126\n" +
-	"\x17remaining_lifespan_secs\x18\x03 \x01(\x04R\x15remainingLifespanSecs\"\x18\n" +
-	"\x16GetCapabilitiesRequest\"l\n" +
-	"\x17GetCapabilitiesResponse\x12Q\n" +
-	"\x14supported_algorithms\x18\x01 \x03(\v2\x1e.keymanager.SupportedAlgorithmR\x13supportedAlgorithms2\xc1\x06\n" +
+	"\x17remaining_lifespan_secs\x18\x03 \x01(\x04R\x15remainingLifespanSecs2\xb6\x05\n" +
 	"\x14KeyProtectionService\x12\x91\x01\n" +
 	"\x12GenerateKEMKeypair\x12<.keymanager.key_protection_service.GenerateKEMKeypairRequest\x1a=.keymanager.key_protection_service.GenerateKEMKeypairResponse\x12\x7f\n" +
 	"\fDecapAndSeal\x126.keymanager.key_protection_service.DecapAndSealRequest\x1a7.keymanager.key_protection_service.DecapAndSealResponse\x12\x8b\x01\n" +
 	"\x10EnumerateKEMKeys\x12:.keymanager.key_protection_service.EnumerateKEMKeysRequest\x1a;.keymanager.key_protection_service.EnumerateKEMKeysResponse\x12\x82\x01\n" +
 	"\rDestroyKEMKey\x127.keymanager.key_protection_service.DestroyKEMKeyRequest\x1a8.keymanager.key_protection_service.DestroyKEMKeyResponse\x12v\n" +
-	"\tGetKEMKey\x123.keymanager.key_protection_service.GetKEMKeyRequest\x1a4.keymanager.key_protection_service.GetKEMKeyResponse\x12\x88\x01\n" +
-	"\x0fGetCapabilities\x129.keymanager.key_protection_service.GetCapabilitiesRequest\x1a:.keymanager.key_protection_service.GetCapabilitiesResponseBYZWgithub.com/GoogleCloudPlatform/key-protection-module/key_protection_service/proto;kpspbb\x06proto3"
+	"\tGetKEMKey\x123.keymanager.key_protection_service.GetKEMKeyRequest\x1a4.keymanager.key_protection_service.GetKEMKeyResponseBYZWgithub.com/GoogleCloudPlatform/key-protection-module/key_protection_service/proto;kpspbb\x06proto3"
 
 var (
 	file_key_protection_service_proto_api_proto_rawDescOnce sync.Once
@@ -753,7 +669,7 @@ func file_key_protection_service_proto_api_proto_rawDescGZIP() []byte {
 	return file_key_protection_service_proto_api_proto_rawDescData
 }
 
-var file_key_protection_service_proto_api_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_key_protection_service_proto_api_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_key_protection_service_proto_api_proto_goTypes = []any{
 	(*GenerateKEMKeypairRequest)(nil),  // 0: keymanager.key_protection_service.GenerateKEMKeypairRequest
 	(*GenerateKEMKeypairResponse)(nil), // 1: keymanager.key_protection_service.GenerateKEMKeypairResponse
@@ -766,47 +682,41 @@ var file_key_protection_service_proto_api_proto_goTypes = []any{
 	(*DestroyKEMKeyResponse)(nil),      // 8: keymanager.key_protection_service.DestroyKEMKeyResponse
 	(*GetKEMKeyRequest)(nil),           // 9: keymanager.key_protection_service.GetKEMKeyRequest
 	(*GetKEMKeyResponse)(nil),          // 10: keymanager.key_protection_service.GetKEMKeyResponse
-	(*GetCapabilitiesRequest)(nil),     // 11: keymanager.key_protection_service.GetCapabilitiesRequest
-	(*GetCapabilitiesResponse)(nil),    // 12: keymanager.key_protection_service.GetCapabilitiesResponse
-	(*proto.HpkeAlgorithm)(nil),        // 13: keymanager.HpkeAlgorithm
-	(*proto.HpkePublicKey)(nil),        // 14: keymanager.HpkePublicKey
-	(*proto.KeyHandle)(nil),            // 15: keymanager.KeyHandle
-	(*proto.KemPublicKey)(nil),         // 16: keymanager.KemPublicKey
-	(*proto.KemCiphertext)(nil),        // 17: keymanager.KemCiphertext
-	(*proto.SupportedAlgorithm)(nil),   // 18: keymanager.SupportedAlgorithm
+	(*proto.HpkeAlgorithm)(nil),        // 11: keymanager.HpkeAlgorithm
+	(*proto.HpkePublicKey)(nil),        // 12: keymanager.HpkePublicKey
+	(*proto.KeyHandle)(nil),            // 13: keymanager.KeyHandle
+	(*proto.KemPublicKey)(nil),         // 14: keymanager.KemPublicKey
+	(*proto.KemCiphertext)(nil),        // 15: keymanager.KemCiphertext
 }
 var file_key_protection_service_proto_api_proto_depIdxs = []int32{
-	13, // 0: keymanager.key_protection_service.GenerateKEMKeypairRequest.algo:type_name -> keymanager.HpkeAlgorithm
-	14, // 1: keymanager.key_protection_service.GenerateKEMKeypairRequest.binding_pub_key:type_name -> keymanager.HpkePublicKey
-	15, // 2: keymanager.key_protection_service.GenerateKEMKeypairResponse.key_handle:type_name -> keymanager.KeyHandle
-	16, // 3: keymanager.key_protection_service.GenerateKEMKeypairResponse.kem_pub_key:type_name -> keymanager.KemPublicKey
-	15, // 4: keymanager.key_protection_service.DecapAndSealRequest.key_handle:type_name -> keymanager.KeyHandle
-	17, // 5: keymanager.key_protection_service.DecapAndSealRequest.ciphertext:type_name -> keymanager.KemCiphertext
-	15, // 6: keymanager.key_protection_service.KEMKeyInfo.key_handle:type_name -> keymanager.KeyHandle
-	13, // 7: keymanager.key_protection_service.KEMKeyInfo.algorithm:type_name -> keymanager.HpkeAlgorithm
+	11, // 0: keymanager.key_protection_service.GenerateKEMKeypairRequest.algo:type_name -> keymanager.HpkeAlgorithm
+	12, // 1: keymanager.key_protection_service.GenerateKEMKeypairRequest.binding_pub_key:type_name -> keymanager.HpkePublicKey
+	13, // 2: keymanager.key_protection_service.GenerateKEMKeypairResponse.key_handle:type_name -> keymanager.KeyHandle
+	14, // 3: keymanager.key_protection_service.GenerateKEMKeypairResponse.kem_pub_key:type_name -> keymanager.KemPublicKey
+	13, // 4: keymanager.key_protection_service.DecapAndSealRequest.key_handle:type_name -> keymanager.KeyHandle
+	15, // 5: keymanager.key_protection_service.DecapAndSealRequest.ciphertext:type_name -> keymanager.KemCiphertext
+	13, // 6: keymanager.key_protection_service.KEMKeyInfo.key_handle:type_name -> keymanager.KeyHandle
+	11, // 7: keymanager.key_protection_service.KEMKeyInfo.algorithm:type_name -> keymanager.HpkeAlgorithm
 	5,  // 8: keymanager.key_protection_service.EnumerateKEMKeysResponse.keys:type_name -> keymanager.key_protection_service.KEMKeyInfo
-	15, // 9: keymanager.key_protection_service.DestroyKEMKeyRequest.key_handle:type_name -> keymanager.KeyHandle
-	15, // 10: keymanager.key_protection_service.GetKEMKeyRequest.key_handle:type_name -> keymanager.KeyHandle
-	16, // 11: keymanager.key_protection_service.GetKEMKeyResponse.kem_pub_key:type_name -> keymanager.KemPublicKey
-	14, // 12: keymanager.key_protection_service.GetKEMKeyResponse.binding_pub_key:type_name -> keymanager.HpkePublicKey
-	18, // 13: keymanager.key_protection_service.GetCapabilitiesResponse.supported_algorithms:type_name -> keymanager.SupportedAlgorithm
-	0,  // 14: keymanager.key_protection_service.KeyProtectionService.GenerateKEMKeypair:input_type -> keymanager.key_protection_service.GenerateKEMKeypairRequest
-	2,  // 15: keymanager.key_protection_service.KeyProtectionService.DecapAndSeal:input_type -> keymanager.key_protection_service.DecapAndSealRequest
-	4,  // 16: keymanager.key_protection_service.KeyProtectionService.EnumerateKEMKeys:input_type -> keymanager.key_protection_service.EnumerateKEMKeysRequest
-	7,  // 17: keymanager.key_protection_service.KeyProtectionService.DestroyKEMKey:input_type -> keymanager.key_protection_service.DestroyKEMKeyRequest
-	9,  // 18: keymanager.key_protection_service.KeyProtectionService.GetKEMKey:input_type -> keymanager.key_protection_service.GetKEMKeyRequest
-	11, // 19: keymanager.key_protection_service.KeyProtectionService.GetCapabilities:input_type -> keymanager.key_protection_service.GetCapabilitiesRequest
-	1,  // 20: keymanager.key_protection_service.KeyProtectionService.GenerateKEMKeypair:output_type -> keymanager.key_protection_service.GenerateKEMKeypairResponse
-	3,  // 21: keymanager.key_protection_service.KeyProtectionService.DecapAndSeal:output_type -> keymanager.key_protection_service.DecapAndSealResponse
-	6,  // 22: keymanager.key_protection_service.KeyProtectionService.EnumerateKEMKeys:output_type -> keymanager.key_protection_service.EnumerateKEMKeysResponse
-	8,  // 23: keymanager.key_protection_service.KeyProtectionService.DestroyKEMKey:output_type -> keymanager.key_protection_service.DestroyKEMKeyResponse
-	10, // 24: keymanager.key_protection_service.KeyProtectionService.GetKEMKey:output_type -> keymanager.key_protection_service.GetKEMKeyResponse
-	12, // 25: keymanager.key_protection_service.KeyProtectionService.GetCapabilities:output_type -> keymanager.key_protection_service.GetCapabilitiesResponse
-	20, // [20:26] is the sub-list for method output_type
-	14, // [14:20] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	13, // 9: keymanager.key_protection_service.DestroyKEMKeyRequest.key_handle:type_name -> keymanager.KeyHandle
+	13, // 10: keymanager.key_protection_service.GetKEMKeyRequest.key_handle:type_name -> keymanager.KeyHandle
+	14, // 11: keymanager.key_protection_service.GetKEMKeyResponse.kem_pub_key:type_name -> keymanager.KemPublicKey
+	12, // 12: keymanager.key_protection_service.GetKEMKeyResponse.binding_pub_key:type_name -> keymanager.HpkePublicKey
+	0,  // 13: keymanager.key_protection_service.KeyProtectionService.GenerateKEMKeypair:input_type -> keymanager.key_protection_service.GenerateKEMKeypairRequest
+	2,  // 14: keymanager.key_protection_service.KeyProtectionService.DecapAndSeal:input_type -> keymanager.key_protection_service.DecapAndSealRequest
+	4,  // 15: keymanager.key_protection_service.KeyProtectionService.EnumerateKEMKeys:input_type -> keymanager.key_protection_service.EnumerateKEMKeysRequest
+	7,  // 16: keymanager.key_protection_service.KeyProtectionService.DestroyKEMKey:input_type -> keymanager.key_protection_service.DestroyKEMKeyRequest
+	9,  // 17: keymanager.key_protection_service.KeyProtectionService.GetKEMKey:input_type -> keymanager.key_protection_service.GetKEMKeyRequest
+	1,  // 18: keymanager.key_protection_service.KeyProtectionService.GenerateKEMKeypair:output_type -> keymanager.key_protection_service.GenerateKEMKeypairResponse
+	3,  // 19: keymanager.key_protection_service.KeyProtectionService.DecapAndSeal:output_type -> keymanager.key_protection_service.DecapAndSealResponse
+	6,  // 20: keymanager.key_protection_service.KeyProtectionService.EnumerateKEMKeys:output_type -> keymanager.key_protection_service.EnumerateKEMKeysResponse
+	8,  // 21: keymanager.key_protection_service.KeyProtectionService.DestroyKEMKey:output_type -> keymanager.key_protection_service.DestroyKEMKeyResponse
+	10, // 22: keymanager.key_protection_service.KeyProtectionService.GetKEMKey:output_type -> keymanager.key_protection_service.GetKEMKeyResponse
+	18, // [18:23] is the sub-list for method output_type
+	13, // [13:18] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_key_protection_service_proto_api_proto_init() }
@@ -820,7 +730,7 @@ func file_key_protection_service_proto_api_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_key_protection_service_proto_api_proto_rawDesc), len(file_key_protection_service_proto_api_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   13,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

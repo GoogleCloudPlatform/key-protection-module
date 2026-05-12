@@ -404,10 +404,6 @@ type fakeKPSClient struct {
 	delay        time.Duration
 }
 
-func (f *fakeKPSClient) GetCapabilities(_ context.Context, _ *kpspb.GetCapabilitiesRequest, _ ...grpc.CallOption) (*kpspb.GetCapabilitiesResponse, error) {
-	return nil, nil
-}
-
 func (f *fakeKPSClient) GenerateKEMKeypair(ctx context.Context, _ *kpspb.GenerateKEMKeypairRequest, _ ...grpc.CallOption) (*kpspb.GenerateKEMKeypairResponse, error) {
 	if f.delay > 0 {
 		select {

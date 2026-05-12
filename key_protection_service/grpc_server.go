@@ -63,23 +63,6 @@ func grpcCodeFromError(err error) codes.Code {
 	return codes.Internal
 }
 
-// GetCapabilities retrieves the supported cryptographic algorithms.
-func (s *grpcServer) GetCapabilities(_ context.Context, _ *kpspb.GetCapabilitiesRequest) (*kpspb.GetCapabilitiesResponse, error) {
-	return &kpspb.GetCapabilitiesResponse{
-		SupportedAlgorithms: []*keymanager.SupportedAlgorithm{
-			{
-				Algorithm: &keymanager.AlgorithmDetails{
-					Type: "kem",
-					Params: &keymanager.AlgorithmParams{
-						Params: &keymanager.AlgorithmParams_KemId{
-							KemId: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
-						},
-					},
-				},
-			},
-		},
-	}, nil
-}
 
 // GenerateKEMKeypair generates a new KEM keypair.
 func (s *grpcServer) GenerateKEMKeypair(ctx context.Context, req *kpspb.GenerateKEMKeypairRequest) (*kpspb.GenerateKEMKeypairResponse, error) {
