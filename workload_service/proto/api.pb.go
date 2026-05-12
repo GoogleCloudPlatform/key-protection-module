@@ -116,8 +116,7 @@ type GenerateKeyRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The specific algorithm to use for the new keypair.
 	Algorithm *proto.AlgorithmDetails `protobuf:"bytes,1,opt,name=algorithm,proto3" json:"algorithm,omitempty"`
-	// The requested duration (in seconds) before the key is automatically
-	// destroyed.
+	// The requested duration (in seconds) before the key is automatically destroyed.
 	Lifespan      uint64 `protobuf:"varint,2,opt,name=lifespan,proto3" json:"lifespan,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -629,7 +628,7 @@ const file_workload_service_proto_api_proto_rawDesc = "" +
 	"\rEnumerateKeys\x121.keymanager.workload_service.EnumerateKeysRequest\x1a2.keymanager.workload_service.EnumerateKeysResponse\"\x10\x82\xd3\xe4\x93\x02\n" +
 	"\x12\b/v1/keys\x12|\n" +
 	"\x06Decaps\x12*.keymanager.workload_service.DecapsRequest\x1a+.keymanager.workload_service.DecapsResponse\"\x19\x82\xd3\xe4\x93\x02\x13:\x01*\"\x0e/v1/keys:decap\x12\x81\x01\n" +
-	"\aDestroy\x12+.keymanager.workload_service.DestroyRequest\x1a,.keymanager.workload_service.DestroyResponse\"\x1b\x82\xd3\xe4\x93\x02\x15:\x01*\"\x10/v1/keys:destroyBFZDgithub.com/google/go-tpm-tools/keymanager/workload_service/proto;apib\x06proto3"
+	"\aDestroy\x12+.keymanager.workload_service.DestroyRequest\x1a,.keymanager.workload_service.DestroyResponse\"\x1b\x82\xd3\xe4\x93\x02\x15:\x01*\"\x10/v1/keys:destroyBQZOgithub.com/GoogleCloudPlatform/key-protection-module/workload_service/proto;apib\x06proto3"
 
 var (
 	file_workload_service_proto_api_proto_rawDescOnce sync.Once

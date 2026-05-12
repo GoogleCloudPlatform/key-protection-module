@@ -18,18 +18,19 @@ import (
 	"time"
 
 	"buf.build/go/protovalidate"
-	kpscc "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/key_custody_core"
+	kpskcc "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/key_custody_core"
+	kpspb "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/proto"
 	keymanager "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto"
 	wskcc "github.com/GoogleCloudPlatform/key-protection-module/workload_service/key_custody_core"
 	api "github.com/GoogleCloudPlatform/key-protection-module/workload_service/proto"
 	"github.com/google/uuid"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
@@ -90,11 +91,11 @@ type keyProtectionService struct{}
 
 // KeyProtectionService defines the interface for generating KEM keypairs.
 type KeyProtectionService interface {
-	GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
-	EnumerateKEMKeys(limit, offset int) ([]kpscc.KEMKeyInfo, bool, error)
-	DestroyKEMKey(kemUUID uuid.UUID) error
-	GetKEMKey(id uuid.UUID) (kemPubKey []byte, bindingPubKey []byte, algo *keymanager.HpkeAlgorithm, deleteAfter uint64, err error)
-	DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) (sealEnc []byte, sealedCT []byte, err error)
+	GenerateKEMKeypair(ctx context.Context, algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
+	EnumerateKEMKeys(ctx context.Context, limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error)
+	DestroyKEMKey(ctx context.Context, kemUUID uuid.UUID) error
+	GetKEMKey(ctx context.Context, id uuid.UUID) (kemPubKey []byte, bindingPubKey []byte, algo *keymanager.HpkeAlgorithm, deleteAfter uint64, err error)
+	DecapAndSeal(ctx context.Context, kemUUID uuid.UUID, encapsulatedKey, aad []byte) (sealEnc []byte, sealedCT []byte, err error)
 }
 
 // workloadService implements WorkloadService by delegating to the WSD KCC FFI.
@@ -124,46 +125,157 @@ func (r *workloadService) GetBindingKey(id uuid.UUID) ([]byte, *keymanager.HpkeA
 	return wskcc.GetBindingKey(id)
 }
 
-func (r *keyProtectionService) GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
-	return kpscc.GenerateKEMKeypair(algo, bindingPubKey, lifespanSecs)
+func (r *keyProtectionService) GenerateKEMKeypair(_ context.Context, algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+	return kpskcc.GenerateKEMKeypair(algo, bindingPubKey, lifespanSecs)
 }
 
-func (r *keyProtectionService) EnumerateKEMKeys(limit, offset int) ([]kpscc.KEMKeyInfo, bool, error) {
-	return kpscc.EnumerateKEMKeys(limit, offset)
+func (r *keyProtectionService) EnumerateKEMKeys(_ context.Context, limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
+	return kpskcc.EnumerateKEMKeys(limit, offset)
 }
 
-func (r *keyProtectionService) DestroyKEMKey(kemUUID uuid.UUID) error {
-	return kpscc.DestroyKEMKey(kemUUID)
+func (r *keyProtectionService) DestroyKEMKey(_ context.Context, kemUUID uuid.UUID) error {
+	return kpskcc.DestroyKEMKey(kemUUID)
 }
 
-func (r *keyProtectionService) DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) (sealEnc []byte, sealedCT []byte, err error) {
-	return kpscc.DecapAndSeal(kemUUID, encapsulatedKey, aad)
+func (r *keyProtectionService) DecapAndSeal(_ context.Context, kemUUID uuid.UUID, encapsulatedKey, aad []byte) (sealEnc []byte, sealedCT []byte, err error) {
+	return kpskcc.DecapAndSeal(kemUUID, encapsulatedKey, aad)
 }
 
-func (r *keyProtectionService) GetKEMKey(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
-	return kpscc.GetKEMKey(id)
+func (r *keyProtectionService) GetKEMKey(_ context.Context, id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+	return kpskcc.GetKEMKey(id)
 }
 
-type remoteKeyProtectionService struct{}
-
-func (r *remoteKeyProtectionService) GenerateKEMKeypair(_ *keymanager.HpkeAlgorithm, _ []byte, _ uint64) (uuid.UUID, []byte, error) {
-	return uuid.Nil, nil, nil
+type remoteKeyProtectionService struct {
+	client kpspb.KeyProtectionServiceClient
 }
 
-func (r *remoteKeyProtectionService) EnumerateKEMKeys(_, _ int) ([]kpscc.KEMKeyInfo, bool, error) {
-	return nil, false, nil
+// NewRemoteKeyProtectionService returns a KeyProtectionService that proxies
+// every call over the given gRPC client to a remote KPS instance.
+func NewRemoteKeyProtectionService(client kpspb.KeyProtectionServiceClient) KeyProtectionService {
+	return &remoteKeyProtectionService{
+		client: client,
+	}
 }
 
-func (r *remoteKeyProtectionService) DestroyKEMKey(_ uuid.UUID) error {
-	return nil
+// ffiStatusFromGrpcError translates a gRPC status error from the remote KPS
+// back into a typed *FFIStatus error, so the rest of WSD (notably
+// httpStatusFromError) can treat remote and in-process KPS errors identically.
+// Errors that aren't gRPC statuses, or whose codes don't have an FFI analogue,
+// are passed through and end up as HTTP 500.
+var grpcCodeToFfiStatus = map[codes.Code]keymanager.Status{
+	codes.NotFound:         keymanager.Status_STATUS_NOT_FOUND,
+	codes.InvalidArgument:  keymanager.Status_STATUS_INVALID_ARGUMENT,
+	codes.PermissionDenied: keymanager.Status_STATUS_PERMISSION_DENIED,
+	codes.Unauthenticated:  keymanager.Status_STATUS_UNAUTHENTICATED,
+	codes.AlreadyExists:    keymanager.Status_STATUS_ALREADY_EXISTS,
 }
 
-func (r *remoteKeyProtectionService) DecapAndSeal(_ uuid.UUID, _, _ []byte) ([]byte, []byte, error) {
-	return nil, nil, nil
+func ffiStatusFromGrpcError(err error) error {
+	if err == nil {
+		return nil
+	}
+	s, ok := status.FromError(err)
+	if !ok {
+		return err
+	}
+	if s.Code() == codes.OK {
+		return nil
+	}
+	if ffiStat, ok := grpcCodeToFfiStatus[s.Code()]; ok {
+		return ffiStat.ToStatus()
+	}
+	return err
 }
 
-func (r *remoteKeyProtectionService) GetKEMKey(_ uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
-	return nil, nil, nil, 0, nil
+func (r *remoteKeyProtectionService) GenerateKEMKeypair(ctx context.Context, algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+	req := &kpspb.GenerateKEMKeypairRequest{
+		Algo: algo,
+		BindingPubKey: &keymanager.HpkePublicKey{
+			Algorithm: algo,
+			PublicKey: bindingPubKey,
+		},
+		LifespanSecs: lifespanSecs,
+	}
+	ctx, cancel := context.WithTimeout(ctx, RPCTimeout)
+	defer cancel()
+	resp, err := r.client.GenerateKEMKeypair(ctx, req)
+	if err != nil {
+		return uuid.Nil, nil, ffiStatusFromGrpcError(err)
+	}
+	id, err := uuid.Parse(resp.GetKeyHandle().GetHandle())
+	if err != nil {
+		return uuid.Nil, nil, fmt.Errorf("invalid KEM key handle from server: %w", err)
+	}
+	return id, resp.GetKemPubKey().GetPublicKey(), nil
+}
+
+func (r *remoteKeyProtectionService) EnumerateKEMKeys(ctx context.Context, limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
+	req := &kpspb.EnumerateKEMKeysRequest{
+		Limit:  int32(limit),
+		Offset: int32(offset),
+	}
+	ctx, cancel := context.WithTimeout(ctx, RPCTimeout)
+	defer cancel()
+	resp, err := r.client.EnumerateKEMKeys(ctx, req)
+	if err != nil {
+		return nil, false, ffiStatusFromGrpcError(err)
+	}
+
+	keys := make([]kpskcc.KEMKeyInfo, 0, len(resp.GetKeys()))
+	for _, k := range resp.GetKeys() {
+		handle := k.GetKeyHandle().GetHandle()
+		id, err := uuid.Parse(handle)
+		if err != nil {
+			return nil, false, fmt.Errorf("invalid key handle %q from server: %w", handle, err)
+		}
+		keys = append(keys, kpskcc.KEMKeyInfo{
+			ID:                    id,
+			Algorithm:             k.GetAlgorithm(),
+			KEMPubKey:             k.GetKemPubKey(),
+			RemainingLifespanSecs: k.GetRemainingLifespanSecs(),
+		})
+	}
+	return keys, resp.GetHasMore(), nil
+}
+
+func (r *remoteKeyProtectionService) DestroyKEMKey(ctx context.Context, kemUUID uuid.UUID) error {
+	req := &kpspb.DestroyKEMKeyRequest{
+		KeyHandle: &keymanager.KeyHandle{Handle: kemUUID.String()},
+	}
+	ctx, cancel := context.WithTimeout(ctx, RPCTimeout)
+	defer cancel()
+	_, err := r.client.DestroyKEMKey(ctx, req)
+	return ffiStatusFromGrpcError(err)
+}
+
+func (r *remoteKeyProtectionService) DecapAndSeal(ctx context.Context, kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error) {
+	req := &kpspb.DecapAndSealRequest{
+		KeyHandle: &keymanager.KeyHandle{Handle: kemUUID.String()},
+		Ciphertext: &keymanager.KemCiphertext{
+			Ciphertext: encapsulatedKey,
+		},
+		Aad: aad,
+	}
+	ctx, cancel := context.WithTimeout(ctx, RPCTimeout)
+	defer cancel()
+	resp, err := r.client.DecapAndSeal(ctx, req)
+	if err != nil {
+		return nil, nil, ffiStatusFromGrpcError(err)
+	}
+	return resp.GetSealEnc(), resp.GetSealedCt(), nil
+}
+
+func (r *remoteKeyProtectionService) GetKEMKey(ctx context.Context, id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+	req := &kpspb.GetKEMKeyRequest{
+		KeyHandle: &keymanager.KeyHandle{Handle: id.String()},
+	}
+	ctx, cancel := context.WithTimeout(ctx, RPCTimeout)
+	defer cancel()
+	resp, err := r.client.GetKEMKey(ctx, req)
+	if err != nil {
+		return nil, nil, nil, 0, ffiStatusFromGrpcError(err)
+	}
+	return resp.GetKemPubKey().GetPublicKey(), resp.GetBindingPubKey().GetPublicKey(), resp.GetBindingPubKey().GetAlgorithm(), resp.GetRemainingLifespanSecs(), nil
 }
 
 // KeyClaimsProvider defines the interface for retrieving key claims.
@@ -175,6 +287,7 @@ type KeyClaimsProvider interface {
 
 // ClaimsCall acts as the internal "envelope" for the channel.
 type ClaimsCall struct {
+	Ctx      context.Context
 	Request  *keymanager.GetKeyClaimsRequest
 	RespChan chan *ClaimsResult
 }
@@ -199,6 +312,7 @@ type Server struct {
 	httpServer *http.Server
 	listener   net.Listener
 	grpcServer *grpc.Server
+	conn       *grpc.ClientConn
 	// todo: add logging mechanism here
 }
 
@@ -209,22 +323,51 @@ var (
 	// ClaimsRequestTimeout is the maximum time to wait for enqueuing the request to
 	// claims channel for getting the key claims.
 	ClaimsRequestTimeout = 5 * time.Second
+	// RPCTimeout is the maximum time to wait for remote KPS RPC calls.
+	RPCTimeout = 5 * time.Second
 )
 
 // New creates a new WSD Server listening on the given unix socket path.
-func New(_ context.Context, socketPath string, mode keymanager.KeyProtectionMechanism) (*Server, error) {
+func New(_ context.Context, socketPath string, mode keymanager.KeyProtectionMechanism, kpsVMIP string) (*Server, error) {
 	var kps KeyProtectionService
+	var conn *grpc.ClientConn
 	switch mode {
 	case keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED:
 		kps = &keyProtectionService{}
 	case keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM:
-		kps = &remoteKeyProtectionService{}
+		if kpsVMIP == "" {
+			return nil, fmt.Errorf("KPS VM IP must be provided when using KEY_PROTECTION_VM mode")
+		}
+		target := fmt.Sprintf("%s:50051", kpsVMIP)
+
+		// Note on Transport Security:
+		// We use insecure.NewCredentials() here because transport-layer confidentiality
+		// and integrity are explicitly NOT part of the threat model for this channel.
+		// All sensitive material passed over this gRPC connection is application-layer
+		// encrypted (HPKE-sealed) using the WSD's Binding Key. Additionally, KPS/WSD
+		// authentication is guaranteed out-of-band by the hardware CVM attestation
+		// quotes generated by each VM.
+		var err error
+		conn, err = grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			return nil, fmt.Errorf("failed to dial KPS: %w", err)
+		}
+		kpsClient := kpspb.NewKeyProtectionServiceClient(conn)
+		kps = NewRemoteKeyProtectionService(kpsClient)
 	case keymanager.KeyProtectionMechanism_KEY_PROTECTION_MECHANISM_UNSPECIFIED:
 		return nil, fmt.Errorf("key protection mechanism is unspecified")
 	default:
 		return nil, fmt.Errorf("unknown key protection mechanism provided: %v", mode)
 	}
-	return NewServer(kps, &workloadService{}, socketPath)
+	s, err := NewServer(kps, &workloadService{}, socketPath)
+	if err != nil {
+		if conn != nil {
+			_ = conn.Close()
+		}
+		return nil, err
+	}
+	s.conn = conn
+	return s, nil
 }
 
 func handleRoutingError(ctx context.Context, mux *runtime.ServeMux, marshaler runtime.Marshaler, w http.ResponseWriter, r *http.Request, httpStatus int) {
@@ -251,12 +394,27 @@ func customHTTPErrorHandler(_ context.Context, _ *runtime.ServeMux, _ runtime.Ma
 	}
 }
 
-func customResponseModifier(_ context.Context, w http.ResponseWriter, resp proto.Message) error {
-	// If the endpoint returned a DestroyResponse, rewrite the status code to 204 No Content
-	if _, ok := resp.(*api.DestroyResponse); ok {
-		w.WriteHeader(http.StatusNoContent)
+func grpcCodeFromError(err error) codes.Code {
+	if err == nil {
+		return codes.OK
 	}
-	return nil
+
+	switch {
+	case errors.Is(err, keymanager.Status_STATUS_NOT_FOUND):
+		return codes.NotFound
+	case errors.Is(err, keymanager.Status_STATUS_INVALID_ARGUMENT),
+		errors.Is(err, keymanager.Status_STATUS_UNSUPPORTED_ALGORITHM),
+		errors.Is(err, keymanager.Status_STATUS_INVALID_KEY):
+		return codes.InvalidArgument
+	case errors.Is(err, keymanager.Status_STATUS_PERMISSION_DENIED):
+		return codes.PermissionDenied
+	case errors.Is(err, keymanager.Status_STATUS_UNAUTHENTICATED):
+		return codes.Unauthenticated
+	case errors.Is(err, keymanager.Status_STATUS_ALREADY_EXISTS):
+		return codes.AlreadyExists
+	default:
+		return codes.Internal
+	}
 }
 
 // NewServer creates a new WSD server with the given dependencies.
@@ -274,12 +432,12 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 	restSocketPath := socketPath
 	grpcSocketPath := strings.TrimSuffix(socketPath, filepath.Ext(socketPath)) + "-grpc.sock"
 
-	grpcServer, err := initGRPCServer(s, grpcSocketPath)
+	grpcServer, conn, err := initGRPCServer(s, grpcSocketPath)
 	if err != nil {
 		return nil, err
 	}
 
-	httpServer, listener, err := initRESTGatewayProxy(restSocketPath, grpcSocketPath)
+	httpServer, listener, err := initRESTGatewayProxy(restSocketPath, conn)
 	if err != nil {
 		grpcServer.GracefulStop()
 		return nil, err
@@ -294,11 +452,11 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 	return s, nil
 }
 
-func initGRPCServer(s *Server, grpcSocketPath string) (*grpc.Server, error) {
+func initGRPCServer(s *Server, grpcSocketPath string) (*grpc.Server, *grpc.ClientConn, error) {
 	_ = os.Remove(grpcSocketPath)
 	grpcListener, err := net.Listen("unix", grpcSocketPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to listen on gRPC socket %s: %w", grpcSocketPath, err)
+		return nil, nil, fmt.Errorf("failed to listen on gRPC socket %s: %w", grpcSocketPath, err)
 	}
 
 	grpcServer := grpc.NewServer()
@@ -309,11 +467,6 @@ func initGRPCServer(s *Server, grpcSocketPath string) (*grpc.Server, error) {
 			log.Printf("native gRPC server stopped: %v", err)
 		}
 	}()
-
-	return grpcServer, nil
-}
-
-func initRESTGatewayProxy(restSocketPath, grpcSocketPath string) (*http.Server, net.Listener, error) {
 	conn, err := grpc.NewClient(
 		"unix:"+grpcSocketPath,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -321,10 +474,11 @@ func initRESTGatewayProxy(restSocketPath, grpcSocketPath string) (*http.Server, 
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to dial internal native gRPC server: %w", err)
 	}
+	return grpcServer, conn, nil
+}
 
+func initRESTGatewayProxy(restSocketPath string, conn *grpc.ClientConn) (*http.Server, net.Listener, error) {
 	mux := runtime.NewServeMux(
-		// Override successful empty metadata responses (e.g. DestroyResponse) to return HTTP 204 No Content
-		runtime.WithForwardResponseOption(customResponseModifier),
 		// Intercept gRPC status errors and serialize them back into the legacy {"error": "<message>"} JSON layout
 		runtime.WithErrorHandler(customHTTPErrorHandler),
 		// Preserve original snake_case protobuf field casing and enforce inclusion of empty structures unconditionally
@@ -372,7 +526,16 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.claimsChan != nil {
 		close(s.claimsChan)
 	}
-	return s.httpServer.Shutdown(ctx)
+	var errs []error
+	if err := s.httpServer.Shutdown(ctx); err != nil {
+		errs = append(errs, err)
+	}
+	if s.conn != nil {
+		if err := s.conn.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // Handler returns the HTTP handler for testing purposes.
@@ -397,7 +560,7 @@ func decapsAADContext(kemUUID uuid.UUID, algorithm keymanager.KemAlgorithm) []by
 }
 
 // Decaps handles the decapsulation of incoming HPKE ciphertext payloads.
-func (s *Server) Decaps(_ context.Context, req *api.DecapsRequest) (*api.DecapsResponse, error) {
+func (s *Server) Decaps(ctx context.Context, req *api.DecapsRequest) (*api.DecapsResponse, error) {
 	if err := protovalidate.Validate(req); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
 	}
@@ -423,15 +586,15 @@ func (s *Server) Decaps(_ context.Context, req *api.DecapsRequest) (*api.DecapsR
 	}
 
 	// Decapsulate and reseal via KPS.
-	sealEnc, sealedCT, err := s.keyProtectionService.DecapAndSeal(kemUUID, encapsulatedKey, aad)
+	sealEnc, sealedCT, err := s.keyProtectionService.DecapAndSeal(ctx, kemUUID, encapsulatedKey, aad)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to decap and seal: %v", err)
+		return nil, status.Errorf(grpcCodeFromError(err), "failed to decap and seal: %v", err)
 	}
 
 	// Open the sealed secret using the binding key via WSD KCC.
 	plaintext, err := s.workloadService.Open(bindingUUID, sealEnc, sealedCT, aad)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to open sealed secret: %v", err)
+		return nil, status.Errorf(grpcCodeFromError(err), "failed to open sealed secret: %v", err)
 	}
 
 	// Return the shared secret.
@@ -444,9 +607,9 @@ func (s *Server) Decaps(_ context.Context, req *api.DecapsRequest) (*api.DecapsR
 }
 
 // GenerateKey handles the creation of new key pairs for workload environments.
-func (s *Server) GenerateKey(_ context.Context, req *api.GenerateKeyRequest) (*api.GenerateKeyResponse, error) {
-	if req == nil || req.Algorithm == nil || req.Algorithm.Params == nil {
-		return nil, status.Errorf(codes.InvalidArgument, "algorithm details cannot be empty")
+func (s *Server) GenerateKey(ctx context.Context, req *api.GenerateKeyRequest) (*api.GenerateKeyResponse, error) {
+	if req == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "request cannot be nil")
 	}
 	if err := protovalidate.Validate(req); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
@@ -454,13 +617,13 @@ func (s *Server) GenerateKey(_ context.Context, req *api.GenerateKeyRequest) (*a
 
 	switch req.Algorithm.Type {
 	case "kem":
-		return s.generateKEMKey(req)
+		return s.generateKEMKey(ctx, req)
 	default:
 		return nil, status.Errorf(codes.InvalidArgument, "unsupported algorithm type: %q. Only 'kem' is supported", req.Algorithm.Type)
 	}
 }
 
-func (s *Server) generateKEMKey(req *api.GenerateKeyRequest) (*api.GenerateKeyResponse, error) {
+func (s *Server) generateKEMKey(ctx context.Context, req *api.GenerateKeyRequest) (*api.GenerateKeyResponse, error) {
 	// Validate algorithm.
 	if req.Algorithm.GetParams() == nil || !IsSupportedKemAlgorithm(req.Algorithm.GetParams().GetKemId()) {
 		return nil, status.Errorf(codes.InvalidArgument, "unsupported ciphertext algorithm. Supported algorithms: %s", SupportedKemAlgorithmsString())
@@ -476,13 +639,13 @@ func (s *Server) generateKEMKey(req *api.GenerateKeyRequest) (*api.GenerateKeyRe
 	// Generate binding keypair via WSD KCC FFI.
 	bindingUUID, bindingPubKey, err := s.workloadService.GenerateBindingKeypair(algo, req.Lifespan)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to generate binding keypair: %v", err)
+		return nil, status.Errorf(grpcCodeFromError(err), "failed to generate binding keypair: %v", err)
 	}
 
 	// Generate KEM keypair via KPS KOL, passing the binding public key.
-	kemUUID, kemPubKey, err := s.keyProtectionService.GenerateKEMKeypair(algo, bindingPubKey, req.Lifespan)
+	kemUUID, kemPubKey, err := s.keyProtectionService.GenerateKEMKeypair(ctx, algo, bindingPubKey, req.Lifespan)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to generate KEM keypair: %v", err)
+		return nil, status.Errorf(grpcCodeFromError(err), "failed to generate KEM keypair: %v", err)
 	}
 
 	// Store the KEM UUID → Binding UUID mapping.
@@ -535,13 +698,13 @@ func (s *Server) GetCapabilities(_ context.Context, req *api.GetCapabilitiesRequ
 }
 
 // EnumerateKeys lists all available cryptographic keys currently registered with the Key Protection Service.
-func (s *Server) EnumerateKeys(_ context.Context, req *api.EnumerateKeysRequest) (*api.EnumerateKeysResponse, error) {
+func (s *Server) EnumerateKeys(ctx context.Context, req *api.EnumerateKeysRequest) (*api.EnumerateKeysResponse, error) {
 	if err := protovalidate.Validate(req); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
 	}
-	keys, _, err := s.keyProtectionService.EnumerateKEMKeys(100, 0)
+	keys, _, err := s.keyProtectionService.EnumerateKEMKeys(ctx, 100, 0)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to enumerate keys: %v", err)
+		return nil, status.Errorf(grpcCodeFromError(err), "failed to enumerate keys: %v", err)
 	}
 
 	keyInfos := make([]*api.KeyInfo, 0, len(keys))
@@ -575,7 +738,7 @@ func (s *Server) EnumerateKeys(_ context.Context, req *api.EnumerateKeysRequest)
 }
 
 // Destroy deletes a registered cryptographic keypair permanently.
-func (s *Server) Destroy(_ context.Context, req *api.DestroyRequest) (*api.DestroyResponse, error) {
+func (s *Server) Destroy(ctx context.Context, req *api.DestroyRequest) (*api.DestroyResponse, error) {
 	if err := protovalidate.Validate(req); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
 	}
@@ -590,7 +753,7 @@ func (s *Server) Destroy(_ context.Context, req *api.DestroyRequest) (*api.Destr
 		return nil, status.Errorf(codes.NotFound, "KEM key handle not found: %s", kemUUID)
 	}
 
-	errKps := s.keyProtectionService.DestroyKEMKey(kemUUID)
+	errKps := s.keyProtectionService.DestroyKEMKey(ctx, kemUUID)
 	errWs := s.workloadService.DestroyBindingKey(bindingUUID)
 
 	// Remove the mapping.
@@ -599,7 +762,7 @@ func (s *Server) Destroy(_ context.Context, req *api.DestroyRequest) (*api.Destr
 	s.mu.Unlock()
 
 	if err := errors.Join(errKps, errWs); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to destroy keys: %v", err)
+		return nil, status.Errorf(grpcCodeFromError(err), "failed to destroy keys: %v", err)
 	}
 
 	return &api.DestroyResponse{}, nil
@@ -635,9 +798,9 @@ func (s *Server) handleGetBindingKeyClaims(id uuid.UUID) (*keymanager.KeyClaims,
 }
 
 // handleGetKEMKeyClaims returns the claims for a KEM key identified by its UUID.
-func (s *Server) handleGetKEMKeyClaims(id uuid.UUID) (*keymanager.KeyClaims, error) {
+func (s *Server) handleGetKEMKeyClaims(ctx context.Context, id uuid.UUID) (*keymanager.KeyClaims, error) {
 	// Key Metadata Lookup.
-	kemPubKey, bindingPubKey, algo, remainingLifespanSecs, err := s.keyProtectionService.GetKEMKey(id)
+	kemPubKey, bindingPubKey, algo, remainingLifespanSecs, err := s.keyProtectionService.GetKEMKey(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get KEM key: %w", err)
 	}
@@ -668,7 +831,7 @@ func (s *Server) handleGetKEMKeyClaims(id uuid.UUID) (*keymanager.KeyClaims, err
 // processClaims is a background worker that processes key claims requests from claimsChan.
 func (s *Server) processClaims() {
 	for call := range s.claimsChan {
-		result := s.handleGetClaims(call.Request)
+		result := s.handleGetClaims(call.Ctx, call.Request)
 
 		select {
 		case call.RespChan <- result:
@@ -679,7 +842,7 @@ func (s *Server) processClaims() {
 }
 
 // handleGetClaims processes a single GetKeyClaimsRequest and returns the result.
-func (s *Server) handleGetClaims(req *keymanager.GetKeyClaimsRequest) *ClaimsResult {
+func (s *Server) handleGetClaims(ctx context.Context, req *keymanager.GetKeyClaimsRequest) *ClaimsResult {
 	keyHandle := req.GetKeyHandle().GetHandle()
 	keyType := req.GetKeyType()
 
@@ -697,7 +860,7 @@ func (s *Server) handleGetClaims(req *keymanager.GetKeyClaimsRequest) *ClaimsRes
 		}
 
 	case keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY:
-		claims, err = s.handleGetKEMKeyClaims(id)
+		claims, err = s.handleGetKEMKeyClaims(ctx, id)
 		if err != nil {
 			return &ClaimsResult{Err: fmt.Errorf("failed to retrieve VM protection key claims: %w", err)}
 		}
@@ -716,7 +879,7 @@ func (s *Server) GetKeyClaims(ctx context.Context, keyHandle string, keyType key
 		KeyType:   keyType,
 	}
 	select {
-	case s.claimsChan <- &ClaimsCall{Request: req, RespChan: respChan}:
+	case s.claimsChan <- &ClaimsCall{Ctx: ctx, Request: req, RespChan: respChan}:
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case <-time.After(ClaimsRequestTimeout):

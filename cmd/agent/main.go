@@ -1,6 +1,4 @@
 // package main is the entrypoint for the keymanager workload service daemon.
-// TODO: this is currently a placeholder to test a minimum key-manager. A separate PR
-// will add the key-protection-agent functionality.
 package main
 
 import (
@@ -15,34 +13,45 @@ import (
 	"syscall"
 	"time"
 
+	keyprotectionservice "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service"
 	keymanager "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto"
 	workloadservice "github.com/GoogleCloudPlatform/key-protection-module/workload_service"
 )
 
 func main() {
-	socketPath := flag.String("socket", "/run/container_launcher/agent.sock", "Path to the unix socket")
+	socketPath := flag.String("socket", "/run/container_launcher/kmaserver.sock", "Path to the unix socket")
+	kpsPort := flag.Int("kps-port", 50050, "Port for the KPS gRPC server")
+	kpsVMIP := flag.String("kps-vm-ip", "", "IP address of the KPS VM (required when KEY_PROTECTION_MECHANISM=KEY_PROTECTION_VM and SERVICE_ROLE=WSD)")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	mode := parseEnvEnum("KEY_PROTECTION_MECHANISM", keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED, keymanager.KeyProtectionMechanism_value)
+	role := parseEnvEnum("SERVICE_ROLE", keymanager.ServiceRole_SERVICE_ROLE_WSD, keymanager.ServiceRole_value)
 
-	log.Printf("Starting Key Protection Agent. Mode: %s\n", mode)
+	log.Printf("Starting Key Protection Agent. Mode: %s, Role: %s\n", mode, role)
 
-	if err := runWSD(ctx, *socketPath, mode); err != nil {
-		log.Fatalf("Agent exited with error: %v", err)
+	var err error
+	if mode == keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM && role == keymanager.ServiceRole_SERVICE_ROLE_KPS {
+		err = runKPS(ctx, *kpsPort)
+	} else {
+		err = runWSD(ctx, *socketPath, mode, *kpsVMIP)
+	}
+
+	if err != nil {
+		log.Fatalf("Server exited with error: %v", err)
 	}
 }
 
-func runWSD(ctx context.Context, socketPath string, mode keymanager.KeyProtectionMechanism) error {
+func runWSD(ctx context.Context, socketPath string, mode keymanager.KeyProtectionMechanism, kpsVMIP string) error {
 	socketDir := filepath.Dir(socketPath)
 	if err := os.MkdirAll(socketDir, 0755); err != nil {
 		return fmt.Errorf("failed to create directory for socket %s: %w", socketDir, err)
 	}
 
-	log.Printf("Initializing WSD server on unix socket %s", socketPath)
-	srv, err := workloadservice.New(ctx, socketPath, mode)
+	log.Printf("Initializing KeyManager WSD server on unix socket %s", socketPath)
+	srv, err := workloadservice.New(ctx, socketPath, mode, kpsVMIP)
 	if err != nil {
 		return fmt.Errorf("failed to create WSD server: %w", err)
 	}
@@ -63,6 +72,34 @@ func runWSD(ctx context.Context, socketPath string, mode keymanager.KeyProtectio
 		defer cancel()
 		if err := srv.Shutdown(shutdownCtx); err != nil {
 			return fmt.Errorf("error during unix socket shutdown: %w", err)
+		}
+		return nil
+	}
+}
+
+func runKPS(ctx context.Context, port int) error {
+	log.Printf("Initializing Key Protection Service on TCP port %d", port)
+	srv, err := keyprotectionservice.NewServer(port)
+	if err != nil {
+		return fmt.Errorf("failed to create KPS server: %w", err)
+	}
+
+	errChan := make(chan error, 1)
+	go func() {
+		if err := srv.Serve(); err != nil {
+			errChan <- fmt.Errorf("gRPC server failed: %w", err)
+		}
+	}()
+
+	select {
+	case err := <-errChan:
+		return err
+	case <-ctx.Done():
+		log.Println("Shutting down KPS server...")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			return fmt.Errorf("error during gRPC shutdown: %w", err)
 		}
 		return nil
 	}

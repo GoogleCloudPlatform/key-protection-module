@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "shared_secret": {
+      "type": "object",
+      "properties": {
+        "algorithm": {
+          "type": "string",
+          "enum": ["KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256"]
+        },
+        "secret": {
+          "type": "string",
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+        }
+      },
+      "required": ["algorithm", "secret"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["shared_secret"],
+  "additionalProperties": false
+}

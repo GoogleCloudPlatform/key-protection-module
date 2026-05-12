@@ -2,6 +2,7 @@ package keyprotectionservice
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"reflect"
 	"testing"
@@ -13,41 +14,41 @@ import (
 )
 
 type mockKPS struct {
-	generateKEMKeypairFn func(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
-	decapAndSealFn       func(kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error)
-	enumerateKEMKeysFn   func(limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error)
-	destroyKEMKeyFn      func(kemUUID uuid.UUID) error
-	GetKEMKeyFn          func(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error)
+	generateKEMKeypairFn func(ctx context.Context, algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
+	decapAndSealFn       func(ctx context.Context, kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error)
+	enumerateKEMKeysFn   func(ctx context.Context, limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error)
+	destroyKEMKeyFn      func(ctx context.Context, kemUUID uuid.UUID) error
+	GetKEMKeyFn          func(ctx context.Context, id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error)
 }
 
-func (m *mockKPS) GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+func (m *mockKPS) GenerateKEMKeypair(ctx context.Context, algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	if m.generateKEMKeypairFn != nil {
-		return m.generateKEMKeypairFn(algo, bindingPubKey, lifespanSecs)
+		return m.generateKEMKeypairFn(ctx, algo, bindingPubKey, lifespanSecs)
 	}
 	return uuid.Nil, nil, nil
 }
 
-func (m *mockKPS) EnumerateKEMKeys(limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
+func (m *mockKPS) EnumerateKEMKeys(ctx context.Context, limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
 	if m.enumerateKEMKeysFn != nil {
-		return m.enumerateKEMKeysFn(limit, offset)
+		return m.enumerateKEMKeysFn(ctx, limit, offset)
 	}
 	return nil, false, nil
 }
 
-func (m *mockKPS) DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error) {
+func (m *mockKPS) DecapAndSeal(ctx context.Context, kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error) {
 	if m.decapAndSealFn != nil {
-		return m.decapAndSealFn(kemUUID, encapsulatedKey, aad)
+		return m.decapAndSealFn(ctx, kemUUID, encapsulatedKey, aad)
 	}
 	return nil, nil, nil
 }
 
-func (m *mockKPS) GetKEMKey(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
-	return m.GetKEMKeyFn(id)
+func (m *mockKPS) GetKEMKey(ctx context.Context, id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+	return m.GetKEMKeyFn(ctx, id)
 }
 
-func (m *mockKPS) DestroyKEMKey(kemUUID uuid.UUID) error {
+func (m *mockKPS) DestroyKEMKey(ctx context.Context, kemUUID uuid.UUID) error {
 	if m.destroyKEMKeyFn != nil {
-		return m.destroyKEMKeyFn(kemUUID)
+		return m.destroyKEMKeyFn(ctx, kemUUID)
 	}
 	return nil
 }
@@ -60,7 +61,7 @@ func TestServiceGenerateKEMKeypairSuccess(t *testing.T) {
 	}
 
 	mock := &mockKPS{
-		generateKEMKeypairFn: func(_ *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+		generateKEMKeypairFn: func(_ context.Context, _ *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 			if len(bindingPubKey) != 32 {
 				t.Fatalf("expected 32-byte binding public key, got %d", len(bindingPubKey))
 			}
@@ -73,7 +74,7 @@ func TestServiceGenerateKEMKeypairSuccess(t *testing.T) {
 
 	svc := newServiceWithKPS(mock)
 
-	id, pubKey, err := svc.GenerateKEMKeypair(&keymanager.HpkeAlgorithm{}, make([]byte, 32), 7200)
+	id, pubKey, err := svc.GenerateKEMKeypair(context.Background(), &keymanager.HpkeAlgorithm{}, make([]byte, 32), 7200)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -87,14 +88,14 @@ func TestServiceGenerateKEMKeypairSuccess(t *testing.T) {
 
 func TestServiceGenerateKEMKeypairError(t *testing.T) {
 	mock := &mockKPS{
-		generateKEMKeypairFn: func(_ *keymanager.HpkeAlgorithm, _ []byte, _ uint64) (uuid.UUID, []byte, error) {
+		generateKEMKeypairFn: func(_ context.Context, _ *keymanager.HpkeAlgorithm, _ []byte, _ uint64) (uuid.UUID, []byte, error) {
 			return uuid.Nil, nil, fmt.Errorf("FFI error")
 		},
 	}
 
 	svc := newServiceWithKPS(mock)
 
-	_, _, err := svc.GenerateKEMKeypair(&keymanager.HpkeAlgorithm{}, make([]byte, 32), 3600)
+	_, _, err := svc.GenerateKEMKeypair(context.Background(), &keymanager.HpkeAlgorithm{}, make([]byte, 32), 3600)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -115,7 +116,7 @@ func TestServiceEnumerateKEMKeysSuccess(t *testing.T) {
 	}
 
 	mock := &mockKPS{
-		enumerateKEMKeysFn: func(limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
+		enumerateKEMKeysFn: func(_ context.Context, limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
 			if limit != 100 || offset != 0 {
 				return nil, false, fmt.Errorf("unexpected limit/offset: %d/%d", limit, offset)
 			}
@@ -124,7 +125,7 @@ func TestServiceEnumerateKEMKeysSuccess(t *testing.T) {
 	}
 	svc := newServiceWithKPS(mock)
 
-	keys, _, err := svc.EnumerateKEMKeys(100, 0)
+	keys, _, err := svc.EnumerateKEMKeys(context.Background(), 100, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -146,13 +147,13 @@ func TestServiceEnumerateKEMKeysSuccess(t *testing.T) {
 
 func TestServiceEnumerateKEMKeysError(t *testing.T) {
 	mock := &mockKPS{
-		enumerateKEMKeysFn: func(_, _ int) ([]kpskcc.KEMKeyInfo, bool, error) {
+		enumerateKEMKeysFn: func(_ context.Context, _, _ int) ([]kpskcc.KEMKeyInfo, bool, error) {
 			return nil, false, fmt.Errorf("enumerate error")
 		},
 	}
 	svc := newServiceWithKPS(mock)
 
-	_, _, err := svc.EnumerateKEMKeys(100, 0)
+	_, _, err := svc.EnumerateKEMKeys(context.Background(), 100, 0)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -161,7 +162,7 @@ func TestServiceEnumerateKEMKeysError(t *testing.T) {
 func TestServiceDestroyKEMKeySuccess(t *testing.T) {
 	kemUUID := uuid.New()
 	mock := &mockKPS{
-		destroyKEMKeyFn: func(id uuid.UUID) error {
+		destroyKEMKeyFn: func(_ context.Context, id uuid.UUID) error {
 			if id != kemUUID {
 				t.Fatalf("expected KEM UUID %s, got %s", kemUUID, id)
 			}
@@ -171,21 +172,21 @@ func TestServiceDestroyKEMKeySuccess(t *testing.T) {
 
 	svc := newServiceWithKPS(mock)
 
-	if err := svc.DestroyKEMKey(kemUUID); err != nil {
+	if err := svc.DestroyKEMKey(context.Background(), kemUUID); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
 func TestServiceDestroyKEMKeyError(t *testing.T) {
 	mock := &mockKPS{
-		destroyKEMKeyFn: func(_ uuid.UUID) error {
+		destroyKEMKeyFn: func(_ context.Context, _ uuid.UUID) error {
 			return fmt.Errorf("destroy FFI error")
 		},
 	}
 
 	svc := newServiceWithKPS(mock)
 
-	err := svc.DestroyKEMKey(uuid.New())
+	err := svc.DestroyKEMKey(context.Background(), uuid.New())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -197,7 +198,7 @@ func TestServiceDecapAndSealSuccess(t *testing.T) {
 	expectedSealedCT := []byte("sealed-ciphertext")
 
 	mock := &mockKPS{
-		decapAndSealFn: func(id uuid.UUID, _, _ []byte) ([]byte, []byte, error) {
+		decapAndSealFn: func(_ context.Context, id uuid.UUID, _, _ []byte) ([]byte, []byte, error) {
 			if id != kemUUID {
 				t.Fatalf("expected KEM UUID %s, got %s", kemUUID, id)
 			}
@@ -207,7 +208,7 @@ func TestServiceDecapAndSealSuccess(t *testing.T) {
 
 	svc := newServiceWithKPS(mock)
 
-	sealEnc, sealedCT, err := svc.DecapAndSeal(kemUUID, []byte("enc-key"), []byte("aad"))
+	sealEnc, sealedCT, err := svc.DecapAndSeal(context.Background(), kemUUID, []byte("enc-key"), []byte("aad"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -221,14 +222,14 @@ func TestServiceDecapAndSealSuccess(t *testing.T) {
 
 func TestServiceDecapAndSealError(t *testing.T) {
 	mock := &mockKPS{
-		decapAndSealFn: func(_ uuid.UUID, _, _ []byte) ([]byte, []byte, error) {
+		decapAndSealFn: func(_ context.Context, _ uuid.UUID, _, _ []byte) ([]byte, []byte, error) {
 			return nil, nil, fmt.Errorf("decap FFI error")
 		},
 	}
 
 	svc := newServiceWithKPS(mock)
 
-	_, _, err := svc.DecapAndSeal(uuid.New(), []byte("enc-key"), nil)
+	_, _, err := svc.DecapAndSeal(context.Background(), uuid.New(), []byte("enc-key"), nil)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -252,7 +253,7 @@ func TestServiceGetKEMKeySuccess(t *testing.T) {
 	keyID := uuid.New()
 
 	mock := &mockKPS{
-		GetKEMKeyFn: func(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+		GetKEMKeyFn: func(_ context.Context, id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
 			if id != keyID {
 				t.Fatalf("expected UUID %s, got %s", keyID, id)
 			}
@@ -262,7 +263,7 @@ func TestServiceGetKEMKeySuccess(t *testing.T) {
 
 	svc := newServiceWithKPS(mock)
 
-	kemPubKey, bindingPubKey, algo, remainingLifespanSecs, err := svc.GetKEMKey(keyID)
+	kemPubKey, bindingPubKey, algo, remainingLifespanSecs, err := svc.GetKEMKey(context.Background(), keyID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

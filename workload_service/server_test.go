@@ -20,7 +20,9 @@ import (
 	api "github.com/GoogleCloudPlatform/key-protection-module/workload_service/proto"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
@@ -36,6 +38,51 @@ func newTestServer(t *testing.T, kemGen kps.KeyProtectionService, bindingGen Wor
 		}
 	})
 	return srv
+}
+
+func newTestGRPCClient(t *testing.T, srv *Server) api.WorkloadServiceClient {
+	t.Helper()
+	baseAddr := srv.listener.Addr().String()
+	grpcSocket := strings.TrimSuffix(baseAddr, filepath.Ext(baseAddr)) + "-grpc.sock"
+
+	conn, err := grpc.NewClient("unix:"+grpcSocket, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("failed to dial gRPC server: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := conn.Close(); err != nil {
+			t.Logf("failed to close gRPC connection: %v", err)
+		}
+	})
+	return api.NewWorkloadServiceClient(conn)
+}
+
+func makeRESTRequest(t *testing.T, srv *Server, method, path string, body []byte, resp proto.Message) {
+	t.Helper()
+	var req *http.Request
+	if body != nil {
+		req = httptest.NewRequest(method, path, bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+	} else {
+		req = httptest.NewRequest(method, path, nil)
+	}
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	contentType := w.Header().Get("Content-Type")
+	if contentType != "application/json" {
+		t.Fatalf("expected Content-Type application/json, got %s", contentType)
+	}
+
+	if resp != nil {
+		if err := protojson.Unmarshal(w.Body.Bytes(), resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+	}
 }
 
 // mockWorkloadService implements WorkloadService for testing.
@@ -95,29 +142,29 @@ type mockKeyProtectionService struct {
 	enumerateErr          error
 }
 
-func (m *mockKeyProtectionService) GenerateKEMKeypair(_ *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+func (m *mockKeyProtectionService) GenerateKEMKeypair(_ context.Context, _ *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	m.receivedPubKey = bindingPubKey
 	m.receivedLifespan = lifespanSecs
 	return m.uuid, m.pubKey, m.err
 }
 
-func (m *mockKeyProtectionService) EnumerateKEMKeys(_, _ int) ([]kpskcc.KEMKeyInfo, bool, error) {
+func (m *mockKeyProtectionService) EnumerateKEMKeys(_ context.Context, _, _ int) ([]kpskcc.KEMKeyInfo, bool, error) {
 	return m.enumeratedKeys, false, m.enumerateErr
 }
 
-func (m *mockKeyProtectionService) DestroyKEMKey(kemUUID uuid.UUID) error {
+func (m *mockKeyProtectionService) DestroyKEMKey(_ context.Context, kemUUID uuid.UUID) error {
 	m.destroyedUUID = kemUUID
 	return m.destroyErr
 }
 
-func (m *mockKeyProtectionService) DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error) {
+func (m *mockKeyProtectionService) DecapAndSeal(_ context.Context, kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error) {
 	m.receivedKEMUUID = kemUUID
 	m.receivedEncKey = encapsulatedKey
 	m.receivedAAD = aad
 	return m.sealEnc, m.sealedCT, m.err
 }
 
-func (m *mockKeyProtectionService) GetKEMKey(_ uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+func (m *mockKeyProtectionService) GetKEMKey(_ context.Context, _ uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
 	return m.pubKey, m.bindingPubKey, m.algo, m.remainingLifespanSecs, m.err
 }
 
@@ -286,19 +333,8 @@ func TestHandleGenerateKeySuccess(t *testing.T) {
 		&mockWorkloadService{uuid: bindingUUID, pubKey: bindingPubKey},
 	)
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_key", bytes.NewReader(validGenerateBody()))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
-	}
-
 	var resp api.GenerateKeyResponse
-	if err := protojson.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
+	makeRESTRequest(t, srv, http.MethodPost, "/v1/keys:generate_key", validGenerateBody(), &resp)
 	if resp.KeyHandle.Handle != kemUUID.String() {
 		t.Fatalf("expected KEM UUID %s, got %s", kemUUID, resp.KeyHandle.Handle)
 	}
@@ -570,18 +606,8 @@ func TestHandleEnumerateKeysEmpty(t *testing.T) {
 		&mockWorkloadService{},
 	)
 
-	req := httptest.NewRequest(http.MethodGet, "/v1/keys", nil)
-	w := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
-	}
-
 	var resp api.EnumerateKeysResponse
-	if err := protojson.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
+	makeRESTRequest(t, srv, http.MethodGet, "/v1/keys", nil, &resp)
 	if len(resp.KeyInfos) != 0 {
 		t.Fatalf("expected 0 key infos, got %d", len(resp.KeyInfos))
 	}
@@ -627,18 +653,8 @@ func TestHandleEnumerateKeysWithKeys(t *testing.T) {
 	)
 
 	t.Run("REST", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/v1/keys", nil)
-		w := httptest.NewRecorder()
-		srv.Handler().ServeHTTP(w, req)
-
-		if w.Code != http.StatusOK {
-			t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
-		}
-
 		var resp api.EnumerateKeysResponse
-		if err := protojson.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-			t.Fatalf("failed to decode response: %v", err)
-		}
+		makeRESTRequest(t, srv, http.MethodGet, "/v1/keys", nil, &resp)
 		if len(resp.KeyInfos) != 2 {
 			t.Fatalf("expected 2 key infos, got %d", len(resp.KeyInfos))
 		}
@@ -647,20 +663,7 @@ func TestHandleEnumerateKeysWithKeys(t *testing.T) {
 	})
 
 	t.Run("GRPC", func(t *testing.T) {
-		baseAddr := srv.listener.Addr().String()
-		grpcSocket := strings.TrimSuffix(baseAddr, filepath.Ext(baseAddr)) + "-grpc.sock"
-
-		conn, err := grpc.NewClient("unix:"+grpcSocket, grpc.WithTransportCredentials(insecure.NewCredentials()))
-		if err != nil {
-			t.Fatalf("failed to dial gRPC server: %v", err)
-		}
-		defer func() {
-			if err := conn.Close(); err != nil {
-				t.Logf("failed to close gRPC connection: %v", err)
-			}
-		}()
-
-		client := api.NewWorkloadServiceClient(conn)
+		client := newTestGRPCClient(t, srv)
 		resp, err := client.EnumerateKeys(context.Background(), &api.EnumerateKeysRequest{})
 		if err != nil {
 			t.Fatalf("EnumerateKeys failed over gRPC: %v", err)
@@ -773,48 +776,83 @@ func TestToHpkeAlgorithm(t *testing.T) {
 	}
 }
 
+func TestGrpcCodeFromError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want codes.Code
+	}{
+		{
+			name: "nil error",
+			err:  nil,
+			want: codes.OK,
+		},
+		{
+			name: "not found",
+			err:  keymanager.Status_STATUS_NOT_FOUND,
+			want: codes.NotFound,
+		},
+		{
+			name: "invalid argument",
+			err:  keymanager.Status_STATUS_INVALID_ARGUMENT,
+			want: codes.InvalidArgument,
+		},
+		{
+			name: "unsupported algorithm",
+			err:  keymanager.Status_STATUS_UNSUPPORTED_ALGORITHM,
+			want: codes.InvalidArgument,
+		},
+		{
+			name: "invalid key",
+			err:  keymanager.Status_STATUS_INVALID_KEY,
+			want: codes.InvalidArgument,
+		},
+		{
+			name: "permission denied",
+			err:  keymanager.Status_STATUS_PERMISSION_DENIED,
+			want: codes.PermissionDenied,
+		},
+		{
+			name: "unauthenticated",
+			err:  keymanager.Status_STATUS_UNAUTHENTICATED,
+			want: codes.Unauthenticated,
+		},
+		{
+			name: "already exists",
+			err:  keymanager.Status_STATUS_ALREADY_EXISTS,
+			want: codes.AlreadyExists,
+		},
+		{
+			name: "other error",
+			err:  errors.New("some other error"),
+			want: codes.Internal,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := grpcCodeFromError(tc.err)
+			if got != tc.want {
+				t.Errorf("grpcCodeFromError() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestHandleGetCapabilities(t *testing.T) {
 	bindingGen := &mockWorkloadService{}
 	kemGen := &mockKeyProtectionService{}
 	srv := newTestServer(t, kemGen, bindingGen)
 
 	t.Run("REST", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/v1/capabilities", nil)
-		w := httptest.NewRecorder()
-		srv.Handler().ServeHTTP(w, req)
-
-		if w.Code != http.StatusOK {
-			t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
-		}
-
-		contentType := w.Header().Get("Content-Type")
-		if contentType != "application/json" {
-			t.Fatalf("expected Content-Type application/json, got %s", contentType)
-		}
-
 		var resp api.GetCapabilitiesResponse
-		if err := protojson.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-			t.Fatalf("failed to decode response: %v", err)
-		}
+		makeRESTRequest(t, srv, http.MethodGet, "/v1/capabilities", nil, &resp)
 
 		assertCapabilities(t, resp.SupportedAlgorithms)
 	})
 
 	t.Run("GRPC", func(t *testing.T) {
-		baseAddr := srv.listener.Addr().String()
-		grpcSocket := strings.TrimSuffix(baseAddr, filepath.Ext(baseAddr)) + "-grpc.sock"
-
-		conn, err := grpc.NewClient("unix:"+grpcSocket, grpc.WithTransportCredentials(insecure.NewCredentials()))
-		if err != nil {
-			t.Fatalf("failed to dial gRPC daemon: %v", err)
-		}
-		defer func() {
-			if err := conn.Close(); err != nil {
-				t.Logf("failed to close gRPC connection: %v", err)
-			}
-		}()
-
-		client := api.NewWorkloadServiceClient(conn)
+		client := newTestGRPCClient(t, srv)
 		resp, err := client.GetCapabilities(context.Background(), &api.GetCapabilitiesRequest{})
 		if err != nil {
 			t.Fatalf("GetCapabilities failed over gRPC: %v", err)
@@ -1080,7 +1118,7 @@ func TestHandleDestroy(t *testing.T) {
 			method:                 http.MethodPost,
 			body:                   validDestroyBody(validKEMUUID.String()),
 			setupMap:               true,
-			expectedStatus:         http.StatusNoContent,
+			expectedStatus:         http.StatusOK,
 			expectKEMDestroyed:     true,
 			expectBindingDestroyed: true,
 			expectMapRemoved:       true,
@@ -1192,21 +1230,8 @@ func TestHandleDestroyGRPC(t *testing.T) {
 	srv.kemToBindingMap[validKEMUUID] = validBindingUUID
 	srv.mu.Unlock()
 
-	baseAddr := srv.listener.Addr().String()
-	grpcSocket := strings.TrimSuffix(baseAddr, filepath.Ext(baseAddr)) + "-grpc.sock"
-
-	conn, err := grpc.NewClient("unix:"+grpcSocket, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Fatalf("failed to dial gRPC server: %v", err)
-	}
-	defer func() {
-		if err := conn.Close(); err != nil {
-			t.Logf("failed to close gRPC connection: %v", err)
-		}
-	}()
-
-	client := api.NewWorkloadServiceClient(conn)
-	_, err = client.Destroy(context.Background(), &api.DestroyRequest{
+	client := newTestGRPCClient(t, srv)
+	_, err := client.Destroy(context.Background(), &api.DestroyRequest{
 		KeyHandle: &keymanager.KeyHandle{Handle: validKEMUUID.String()},
 	})
 	if err != nil {
@@ -1248,6 +1273,27 @@ func decapsRequestBody(kemUUID uuid.UUID, algo keymanager.KemAlgorithm, encKey [
 	)
 }
 
+func assertDecapsSuccess(t *testing.T, resp *api.DecapsResponse, ds *mockKeyProtectionService, kemUUID uuid.UUID, encKey, expectedAAD, plaintext []byte) {
+	t.Helper()
+	if resp.SharedSecret.Algorithm != keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256 {
+		t.Fatalf("expected shared_secret.algorithm=%d, got %d", keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256, resp.SharedSecret.Algorithm)
+	}
+
+	if string(resp.SharedSecret.Secret) != string(plaintext) {
+		t.Fatalf("expected plaintext %q, got %q", plaintext, resp.SharedSecret.Secret)
+	}
+
+	if ds.receivedKEMUUID != kemUUID {
+		t.Fatalf("expected KeyProtectionService to receive KEM UUID %s, got %s", kemUUID, ds.receivedKEMUUID)
+	}
+	if string(ds.receivedEncKey) != string(encKey) {
+		t.Fatalf("expected KeyProtectionService to receive enc key %q, got %q", encKey, ds.receivedEncKey)
+	}
+	if string(ds.receivedAAD) != string(expectedAAD) {
+		t.Fatalf("expected KeyProtectionService to receive AAD %q, got %q", expectedAAD, ds.receivedAAD)
+	}
+}
+
 func TestHandleDecapsSuccess(t *testing.T) {
 	kemUUID := uuid.New()
 	bindingUUID := uuid.New()
@@ -1263,54 +1309,13 @@ func TestHandleDecapsSuccess(t *testing.T) {
 
 	t.Run("REST", func(t *testing.T) {
 		body := decapsRequestBody(kemUUID, keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256, encKey)
-		req := httptest.NewRequest(http.MethodPost, "/v1/keys:decap", strings.NewReader(body))
-		w := httptest.NewRecorder()
-		srv.Handler().ServeHTTP(w, req)
-
-		if w.Code != http.StatusOK {
-			t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
-		}
-
 		var resp api.DecapsResponse
-		if err := protojson.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-			t.Fatalf("failed to decode response: %v", err)
-		}
-		if resp.SharedSecret.Algorithm != keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256 {
-			t.Fatalf("expected shared_secret.algorithm=%d, got %d", keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256, resp.SharedSecret.Algorithm)
-		}
-
-		decoded := resp.SharedSecret.Secret
-		if string(decoded) != string(plaintext) {
-			t.Fatalf("expected plaintext %q, got %q", plaintext, decoded)
-		}
-
-		// Verify KeyProtectionService received correct args.
-		if ds.receivedKEMUUID != kemUUID {
-			t.Fatalf("expected KeyProtectionService to receive KEM UUID %s, got %s", kemUUID, ds.receivedKEMUUID)
-		}
-		if string(ds.receivedEncKey) != string(encKey) {
-			t.Fatalf("expected KeyProtectionService to receive enc key %q, got %q", encKey, ds.receivedEncKey)
-		}
-		if string(ds.receivedAAD) != string(expectedAAD) {
-			t.Fatalf("expected KeyProtectionService to receive AAD %q, got %q", expectedAAD, ds.receivedAAD)
-		}
+		makeRESTRequest(t, srv, http.MethodPost, "/v1/keys:decap", []byte(body), &resp)
+		assertDecapsSuccess(t, &resp, ds, kemUUID, encKey, expectedAAD, plaintext)
 	})
 
 	t.Run("GRPC", func(t *testing.T) {
-		baseAddr := srv.listener.Addr().String()
-		grpcSocket := strings.TrimSuffix(baseAddr, filepath.Ext(baseAddr)) + "-grpc.sock"
-
-		conn, err := grpc.NewClient("unix:"+grpcSocket, grpc.WithTransportCredentials(insecure.NewCredentials()))
-		if err != nil {
-			t.Fatalf("failed to dial gRPC server: %v", err)
-		}
-		defer func() {
-			if err := conn.Close(); err != nil {
-				t.Logf("failed to close gRPC connection: %v", err)
-			}
-		}()
-
-		client := api.NewWorkloadServiceClient(conn)
+		client := newTestGRPCClient(t, srv)
 		resp, err := client.Decaps(context.Background(), &api.DecapsRequest{
 			KeyHandle: &keymanager.KeyHandle{Handle: kemUUID.String()},
 			Ciphertext: &keymanager.KemCiphertext{
@@ -1323,19 +1328,7 @@ func TestHandleDecapsSuccess(t *testing.T) {
 			t.Fatalf("Decaps failed over gRPC: %v", err)
 		}
 
-		if resp.SharedSecret.Algorithm != keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256 {
-			t.Fatalf("expected shared_secret.algorithm=%d, got %d", keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256, resp.SharedSecret.Algorithm)
-		}
-
-		if ds.receivedKEMUUID != kemUUID {
-			t.Fatalf("expected KeyProtectionService to receive KEM UUID %s, got %s", kemUUID, ds.receivedKEMUUID)
-		}
-		if string(ds.receivedEncKey) != string(encKey) {
-			t.Fatalf("expected KeyProtectionService to receive enc key %q, got %q", encKey, ds.receivedEncKey)
-		}
-		if string(ds.receivedAAD) != string(expectedAAD) {
-			t.Fatalf("expected KeyProtectionService to receive AAD %q, got %q", expectedAAD, ds.receivedAAD)
-		}
+		assertDecapsSuccess(t, resp, ds, kemUUID, encKey, expectedAAD, plaintext)
 	})
 }
 
@@ -1580,6 +1573,45 @@ func TestGetClaimsFromChannel(t *testing.T) {
 			}
 			if result != expectedReply {
 				t.Errorf("result mismatch: expected %v, got %v", expectedReply, result)
+			}
+		})
+	}
+}
+
+func TestFFIStatusFromGrpcError(t *testing.T) {
+	cases := []struct {
+		name     string
+		err      error
+		wantNil  bool
+		wantFFI  keymanager.Status
+		wantSame bool // true if helper should pass the err through unchanged
+	}{
+		{"nil", nil, true, 0, false},
+		{"not_found", status.Error(codes.NotFound, "x"), false, keymanager.Status_STATUS_NOT_FOUND, false},
+		{"invalid_argument", status.Error(codes.InvalidArgument, "x"), false, keymanager.Status_STATUS_INVALID_ARGUMENT, false},
+		{"permission_denied", status.Error(codes.PermissionDenied, "x"), false, keymanager.Status_STATUS_PERMISSION_DENIED, false},
+		{"unauthenticated", status.Error(codes.Unauthenticated, "x"), false, keymanager.Status_STATUS_UNAUTHENTICATED, false},
+		{"already_exists", status.Error(codes.AlreadyExists, "x"), false, keymanager.Status_STATUS_ALREADY_EXISTS, false},
+		{"unavailable_passes_through", status.Error(codes.Unavailable, "x"), false, 0, true},
+		{"non_grpc_passes_through", errors.New("plain"), false, 0, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ffiStatusFromGrpcError(tc.err)
+			if tc.wantNil {
+				if got != nil {
+					t.Fatalf("expected nil, got %v", got)
+				}
+				return
+			}
+			if tc.wantSame {
+				if got != tc.err {
+					t.Fatalf("expected pass-through, got %v", got)
+				}
+				return
+			}
+			if !errors.Is(got, tc.wantFFI) {
+				t.Fatalf("expected errors.Is(got, %v) to be true, got %v", tc.wantFFI, got)
 			}
 		})
 	}
