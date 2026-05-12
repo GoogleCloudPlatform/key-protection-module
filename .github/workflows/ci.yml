@@ -134,25 +134,21 @@ jobs:
           fi
 
       - name: Build and Test Go (Attestation Service)
+        if: matrix.os == 'ubuntu-latest'
         run: |
           cd keymanager/attestation_service
           go build -v ./...
-          if [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "amd64" ]; then
-            # Run unit tests with coverage and enforce 60% threshold on primary platform
-            go test -v -race -coverprofile=coverage.txt -covermode=atomic ./
-            
-            echo "Checking coverage for Attestation Service..."
-            COVERAGE=$(go tool cover -func=coverage.txt | grep total | awk '{print $3}' | sed 's/%//')
-            echo "Total coverage: $COVERAGE%"
-            THRESHOLD=75
-            COVERAGE_INT=${COVERAGE%.*}
-            if [ -n "$COVERAGE_INT" ] && [ "$COVERAGE_INT" -lt "$THRESHOLD" ]; then
-              echo "Coverage $COVERAGE% is below threshold $THRESHOLD%"
-              exit 1
-            fi
-          else
-            # Just run standard tests on other platforms
-            go test -v ./...
+          # Run unit tests with coverage and enforce 80% threshold (only runs on primary Linux matrix)
+          go test -v -race -coverprofile=coverage.txt -covermode=atomic ./
+          
+          echo "Checking coverage for Attestation Service..."
+          COVERAGE=$(go tool cover -func=coverage.txt | grep total | awk '{print $3}' | sed 's/%//')
+          echo "Total coverage: $COVERAGE%"
+          THRESHOLD=75
+          COVERAGE_INT=${COVERAGE%.*}
+          if [ -n "$COVERAGE_INT" ] && [ "$COVERAGE_INT" -lt "$THRESHOLD" ]; then
+            echo "Coverage $COVERAGE% is below threshold $THRESHOLD%"
+            exit 1
           fi
 
   lint:
