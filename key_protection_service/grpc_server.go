@@ -65,15 +65,6 @@ func grpcCodeFromError(err error) codes.Code {
 
 // GetCapabilities retrieves the supported cryptographic algorithms.
 func (s *grpcServer) GetCapabilities(_ context.Context, _ *kpspb.GetCapabilitiesRequest) (*kpspb.GetCapabilitiesResponse, error) {
-	// For Bowcaster, KPS needs to report its own capabilities.
-	// Since Vanguard's WSD has the same list of supported algorithms,
-	// we will proxy this request to the service layer.
-
-	// Assuming svc has a GetCapabilities method. If it doesn't we might need to add it,
-	// but the WSD expects a standard GetCapabilitiesResponse format from KPS.
-	// We'll return the hardcoded supported algorithm per the docs for now if it's not in the interface,
-	// but let's check if we can just implement it directly here to match WSD.
-
 	return &kpspb.GetCapabilitiesResponse{
 		SupportedAlgorithms: []*keymanager.SupportedAlgorithm{
 			{
