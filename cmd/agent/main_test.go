@@ -144,7 +144,7 @@ func TestParseEnvEnum(t *testing.T) {
 		"VALUE1": 1,
 		"VALUE2": 2,
 	}
-	defaultValue := keymanager.ServiceRole_WSD
+	defaultValue := keymanager.ServiceRole_SERVICE_ROLE_WSD
 
 	// Test default value
 	if err := os.Unsetenv(key); err != nil {
