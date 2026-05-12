@@ -86,7 +86,7 @@ func TestServerGRPCRegistration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to dial grpc server: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	client := kpspb.NewKeyProtectionServiceClient(conn)
 	_, err = client.EnumerateKEMKeys(context.Background(), &kpspb.EnumerateKEMKeysRequest{Limit: 1, Offset: 0})

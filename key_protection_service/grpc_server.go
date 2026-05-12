@@ -63,7 +63,6 @@ func grpcCodeFromError(err error) codes.Code {
 	return codes.Internal
 }
 
-
 // GenerateKEMKeypair generates a new KEM keypair.
 func (s *grpcServer) GenerateKEMKeypair(ctx context.Context, req *kpspb.GenerateKEMKeypairRequest) (*kpspb.GenerateKEMKeypairResponse, error) {
 	id, pubKey, err := s.svc.GenerateKEMKeypair(ctx, req.GetAlgo(), req.GetBindingPubKey().GetPublicKey(), req.GetLifespanSecs())

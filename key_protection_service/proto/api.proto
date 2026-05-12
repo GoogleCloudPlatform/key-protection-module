@@ -16,7 +16,6 @@ service KeyProtectionService {
   rpc EnumerateKEMKeys(EnumerateKEMKeysRequest) returns (EnumerateKEMKeysResponse);
   rpc DestroyKEMKey(DestroyKEMKeyRequest) returns (DestroyKEMKeyResponse);
   rpc GetKEMKey(GetKEMKeyRequest) returns (GetKEMKeyResponse);
-
 }
 
 message GenerateKEMKeypairRequest {
@@ -76,5 +75,3 @@ message GetKEMKeyResponse {
   keymanager.HpkePublicKey binding_pub_key = 2;
   uint64 remaining_lifespan_secs = 3;
 }
-
-
