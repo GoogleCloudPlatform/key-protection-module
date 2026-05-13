@@ -166,6 +166,74 @@ steps:
         
         ./scripts/heartbeat-test-monitor.sh "$${WSD_VM}" "$${ZONE}"
 
+  # Create KPS VM for gRPC API end-to-end test
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: CreateKpsGrpcApiVM
+    waitFor: ['PushImages']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        VM_NAME="kpm-grpc-api-kps-${BUILD_ID}"
+        ZONE="${_ZONE}"
+        gcloud compute instances create "$${VM_NAME}" \
+          --zone="$${ZONE}" \
+          --machine-type=e2-medium \
+          --boot-disk-size=20GB \
+          --image-family=cos-stable \
+          --image-project=cos-cloud \
+          --maintenance-policy=TERMINATE \
+          --provisioning-model=SPOT \
+          --scopes=cloud-platform \
+          --metadata-from-file=startup-script=scripts/vm-test-startup.sh \
+          --metadata="location=${LOCATION},image=${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA},docker_env=KEY_PROTECTION_MECHANISM=KEY_PROTECTION_VM SERVICE_ROLE=SERVICE_ROLE_KPS,docker_args=-p 50050:50050"
+
+        # Save internal IP for the test VM step
+        gcloud compute instances describe "$${VM_NAME}" \
+          --zone="$${ZONE}" \
+          --format='get(networkInterfaces[0].networkIP)' > /workspace/grpc_api_kps_ip.txt
+        echo "gRPC API KPS VM IP: $(cat /workspace/grpc_api_kps_ip.txt)"
+
+  # Create gRPC API test VM (runs the WSD agent + drives endpoints against remote KPS)
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: CreateGrpcApiTestVM
+    waitFor: ['CreateKpsGrpcApiVM']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        VM_NAME="kpm-grpc-api-test-${BUILD_ID}"
+        ZONE="${_ZONE}"
+        KPS_IP=$(cat /workspace/grpc_api_kps_ip.txt)
+        gcloud compute instances create "$${VM_NAME}" \
+          --zone="$${ZONE}" \
+          --machine-type=e2-standard-4 \
+          --boot-disk-size=50GB \
+          --image-family=cos-stable \
+          --image-project=cos-cloud \
+          --maintenance-policy=TERMINATE \
+          --provisioning-model=SPOT \
+          --scopes=cloud-platform \
+          --metadata-from-file=startup-script=scripts/vm-test-startup.sh \
+          --metadata="location=${LOCATION},test_image=${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME_TEST}:${SHORT_SHA},docker_env=KPS_IP=$${KPS_IP},test_command=bash /app/tests/run_grpc_wsd_e2e.sh"
+
+  # Monitor gRPC API tests and cleanup both VMs
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: MonitorGrpcApiTests
+    waitFor: ['CreateGrpcApiTestVM']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        KPS_VM="kpm-grpc-api-kps-${BUILD_ID}"
+        TEST_VM="kpm-grpc-api-test-${BUILD_ID}"
+        ZONE="${_ZONE}"
+
+        # Ensure cleanup on exit
+        trap 'echo "Cleaning up VMs..."; gcloud compute instances delete "$${KPS_VM}" "$${TEST_VM}" --zone="$${ZONE}" --quiet || true' EXIT
+
+        ./scripts/vm-test-monitor.sh "$${TEST_VM}" "$${ZONE}"
+
   # Create a GCE VM for schema contract tests (reusing the test image with custom command)
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: CreateSchemaTestVM
@@ -202,7 +270,7 @@ steps:
   # Final validation: Containerized socket check for the production image
   - name: 'gcr.io/cloud-builders/docker'
     id: FinalSocketCheck
-    waitFor: ['MonitorVMTests', 'MonitorSchemaVMTests', 'MonitorHeartbeat']
+    waitFor: ['MonitorVMTests', 'MonitorSchemaVMTests', 'MonitorHeartbeat', 'MonitorGrpcApiTests']
 
     entrypoint: 'bash'
     args:
