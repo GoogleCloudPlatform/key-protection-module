@@ -1,3 +1,17 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 substitutions:
   "_OUTPUT_IMAGE_NAME": ""
   "_OUTPUT_IMAGE_PROJECT": ""
@@ -57,12 +71,16 @@ steps:
         cp ./image/attestation_agent /workspace/oem-install/kps/attestation_agent
         cp ./image/exit_script.sh /workspace/oem-install/kps/exit_script.sh
         cp ./image/kps_runner.sh /workspace/oem-install/kps/kps_runner.sh
-        cp ./image/image.env /workspace/oem-install/kps/image.env
-
 
         if [ -f /workspace/kps_image/image.tar ]; then
             cp /workspace/kps_image/image.tar /workspace/oem-install/kps/image.tar
         fi
+
+        cat << EOF > /workspace/oem-install/kps/image.env
+        IMAGE_PATH="/usr/share/oem/kps/image.tar"
+        IMAGE_REF="${_KPS_DOCKER_IMAGE_REF}"
+        CONTAINER_NAME="key-management-agent"
+        EOF
 
         chmod +x /workspace/oem-install/kps/kps_runner.sh || true
         chmod +x /workspace/oem-install/entrypoint.sh || true
