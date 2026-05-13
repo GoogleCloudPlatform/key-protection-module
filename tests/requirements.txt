@@ -1,0 +1,5 @@
+requests==2.33.1
+requests-unixsocket==0.4.1
+pytest==9.0.3
+jsonschema==4.26.0
+pyhpke==0.5.2

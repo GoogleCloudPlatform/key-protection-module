@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+// API definitions for the Attestation Service
+package keymanager.attestation_service;
+
+option go_package = "github.com/GoogleCloudPlatform/key-protection-module/keymanager/attestation_service/proto;api";
+
+import "km_common/proto/crypto_types.proto";
+import "attestation.proto";
+
+message GetKeyEndorsementRequest {
+  bytes challenge = 1;
+  keymanager.KeyHandle key_handle = 2;
+}
+
+message GetKeyEndorsementResponse {
+  // A KeyAttestation containing VmProtectionKeyClaims.
+  confidential_space.KeyAttestation key_attestation = 1;
+}
+
+service AttestationService {
+  // Obtains an attestation from the KPS VM.
+  rpc GetKeyEndorsement (GetKeyEndorsementRequest) returns (GetKeyEndorsementResponse);
+}

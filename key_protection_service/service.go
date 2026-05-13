@@ -4,6 +4,8 @@
 package keyprotectionservice
 
 import (
+	"context"
+
 	kpskcc "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/key_custody_core"
 	"github.com/google/uuid"
 
@@ -18,6 +20,7 @@ type KeyProtectionService interface {
 	// the shared secrets.
 	//
 	// Parameters:
+	//   - ctx: The context for the request.
 	//   - algo: The HPKE algorithm suite to use for the KEM keypair.
 	//   - bindingPubKey: The public key of the workload/client that this KEM key is bound to.
 	//   - lifespanSecs: The duration (in seconds) for which the generated keypair remains valid.
@@ -26,13 +29,14 @@ type KeyProtectionService interface {
 	//   - uuid.UUID: A unique identifier representing the stored KEM keypair.
 	//   - []byte: The public KEM key bytes to be shared with the sender.
 	//   - error: An error if generation or storage fails.
-	GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
+	GenerateKEMKeypair(ctx context.Context, algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
 
 	// DecapAndSeal decapsulates an encapsulated shared secret and reseals it.
 	// This operation uses the stored private KEM key to recover the shared secret,
 	// and immediately reseals it using the binding public key associated with the KEM key.
 	//
 	// Parameters:
+	//   - ctx: The context for the request.
 	//   - kemUUID: The unique identifier of the stored KEM keypair to use for decapsulation.
 	//   - encapsulatedKey: The encapsulated shared secret received from a sender.
 	//   - aad: Additional Authenticated Data to include in the resealing process.
@@ -41,12 +45,13 @@ type KeyProtectionService interface {
 	//   - []byte: The encapsulated key for the resealed shared secret (seal_enc).
 	//   - []byte: The authenticated ciphertext of the resealed shared secret (sealed_ct).
 	//   - error: An error if the KEM key is not found, expired, or if decapsulation/sealing fails.
-	DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error)
+	DecapAndSeal(ctx context.Context, kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error)
 
 	// EnumerateKEMKeys retrieves a list of active KEM keys, up to a specified limit
 	// and starting from a given offset.
 	//
 	// Parameters:
+	//   - ctx: The context for the request.
 	//   - limit: The maximum number of keys to return.
 	//   - offset: The index of the first key to return.
 	//
@@ -54,21 +59,23 @@ type KeyProtectionService interface {
 	//   - []kpskcc.KEMKeyInfo: A slice of KEM key information structs.
 	//   - bool: True if there are more keys available.
 	//   - error: An error if the enumeration fails.
-	EnumerateKEMKeys(limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error)
+	EnumerateKEMKeys(ctx context.Context, limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error)
 
 	// DestroyKEMKey removes the specified KEM keypair from the active key registry.
 	// This prevents any future decapsulation operations using this key.
 	//
 	// Parameters:
+	//   - ctx: The context for the request.
 	//   - kemUUID: The unique identifier of the stored KEM keypair to destroy.
 	//
 	// Returns:
 	//   - error: An error if the key is not found or deletion fails.
-	DestroyKEMKey(kemUUID uuid.UUID) error
+	DestroyKEMKey(ctx context.Context, kemUUID uuid.UUID) error
 
 	// GetKEMKey retrieves metadata and public keys associated with a stored KEM keypair.
 	//
 	// Parameters:
+	//   - ctx: The context for the request.
 	//   - id: The unique identifier of the stored KEM keypair.
 	//
 	// Returns:
@@ -77,29 +84,29 @@ type KeyProtectionService interface {
 	//   - *keymanager.HpkeAlgorithm: The HPKE algorithm suite of the KEM key.
 	//   - uint64: The remaining lifespan of the keypair in seconds.
 	//   - error: An error if the key is not found or has expired.
-	GetKEMKey(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error)
+	GetKEMKey(ctx context.Context, id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error)
 }
 
 // defaultKPS implements KeyProtectionService by delegating to the KPS KCC FFI.
 type defaultKPS struct{}
 
-func (d *defaultKPS) GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+func (d *defaultKPS) GenerateKEMKeypair(_ context.Context, algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	return kpskcc.GenerateKEMKeypair(algo, bindingPubKey, lifespanSecs)
 }
 
-func (d *defaultKPS) DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error) {
+func (d *defaultKPS) DecapAndSeal(_ context.Context, kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error) {
 	return kpskcc.DecapAndSeal(kemUUID, encapsulatedKey, aad)
 }
 
-func (d *defaultKPS) EnumerateKEMKeys(limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
+func (d *defaultKPS) EnumerateKEMKeys(_ context.Context, limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
 	return kpskcc.EnumerateKEMKeys(limit, offset)
 }
 
-func (d *defaultKPS) DestroyKEMKey(kemUUID uuid.UUID) error {
+func (d *defaultKPS) DestroyKEMKey(_ context.Context, kemUUID uuid.UUID) error {
 	return kpskcc.DestroyKEMKey(kemUUID)
 }
 
-func (d *defaultKPS) GetKEMKey(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+func (d *defaultKPS) GetKEMKey(_ context.Context, id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
 	return kpskcc.GetKEMKey(id)
 }
 
@@ -126,33 +133,33 @@ func newServiceWithKPS(kps KeyProtectionService) *Service {
 // public key by delegating to the underlying KeyProtectionService backend.
 // It ensures that only the intended workload (holding the binding private key)
 // can access the shared secrets sent to the generated KEM public key.
-func (s *Service) GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
-	return s.kps.GenerateKEMKeypair(algo, bindingPubKey, lifespanSecs)
+func (s *Service) GenerateKEMKeypair(ctx context.Context, algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+	return s.kps.GenerateKEMKeypair(ctx, algo, bindingPubKey, lifespanSecs)
 }
 
 // DecapAndSeal securely decapsulates an encapsulated shared secret using the
 // stored KEM private key and immediately reseals it for the workload using its
 // associated binding public key. It delegates cryptographic operations to the
 // underlying KeyProtectionService backend.
-func (s *Service) DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error) {
-	return s.kps.DecapAndSeal(kemUUID, encapsulatedKey, aad)
+func (s *Service) DecapAndSeal(ctx context.Context, kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error) {
+	return s.kps.DecapAndSeal(ctx, kemUUID, encapsulatedKey, aad)
 }
 
 // EnumerateKEMKeys enumerates active KEM keys up to limit by offset calling the underlying KPS.
-func (s *Service) EnumerateKEMKeys(limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
-	return s.kps.EnumerateKEMKeys(limit, offset)
+func (s *Service) EnumerateKEMKeys(ctx context.Context, limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
+	return s.kps.EnumerateKEMKeys(ctx, limit, offset)
 }
 
 // DestroyKEMKey destroys the KEM key identified by kemUUID by calling the KPS KCC FFI.
 // DestroyKEMKey removes the specified KEM keypair from the active key registry
 // by delegating to the underlying KeyProtectionService backend.
-func (s *Service) DestroyKEMKey(kemUUID uuid.UUID) error {
-	return s.kps.DestroyKEMKey(kemUUID)
+func (s *Service) DestroyKEMKey(ctx context.Context, kemUUID uuid.UUID) error {
+	return s.kps.DestroyKEMKey(ctx, kemUUID)
 }
 
 // GetKEMKey retrieves the public KEM key, binding public key, HPKE algorithm,
 // and remaining lifespan in seconds of a stored KEM keypair by delegating
 // to the underlying KeyProtectionService backend.
-func (s *Service) GetKEMKey(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
-	return s.kps.GetKEMKey(id)
+func (s *Service) GetKEMKey(ctx context.Context, id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+	return s.kps.GetKEMKey(ctx, id)
 }

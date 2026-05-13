@@ -240,7 +240,7 @@ fn enumerate_binding_keys_internal(
     let count = metas.len();
     let has_more = offset + count < total_count;
 
-    for (entry, meta) in entries.iter_mut().zip(metas.into_iter()) {
+    for (entry, meta) in entries.iter_mut().zip(metas) {
         let KeySpec::Binding {
             algo,
             binding_public_key: pub_key,
@@ -280,6 +280,9 @@ fn enumerate_binding_keys_internal(
     Ok((count, has_more))
 }
 
+/// # Safety
+/// * `out_entries` must be a valid pointer to an array of `WsKeyInfo` of length `max_entries`.
+/// * If `out_has_more` is provided, it must be a valid reference.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn key_manager_enumerate_binding_keys(
     out_entries: *mut WsKeyInfo,
@@ -309,7 +312,7 @@ fn get_binding_key_internal(uuid: Uuid) -> Result<(HpkeAlgorithm, PublicKey), St
         KeySpec::Binding {
             algo,
             binding_public_key,
-        } => Ok((algo.clone(), binding_public_key.clone())),
+        } => Ok((*algo, binding_public_key.clone())),
         _ => Err(Status::InternalError),
     }
 }

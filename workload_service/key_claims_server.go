@@ -23,23 +23,21 @@ func NewKeyClaimsGRPCServer(wsdServer *Server) *KeyClaimsGRPCServer {
 
 // GetKeyClaims handles requests for key claims.
 func (s *KeyClaimsGRPCServer) GetKeyClaims(ctx context.Context, req *keymanager.GetKeyClaimsRequest) (*keymanager.KeyClaims, error) {
-	return s.wsdServer.handleGetClaims(req)
+	return s.wsdServer.handleGetClaims(ctx, req)
 }
 
 // StartKeyClaimsGRPCServer starts the gRPC server on the specified port.
-// It runs the server in a goroutine and returns the grpc.Server instance.
-func StartKeyClaimsGRPCServer(wsdServer *Server, port int) (*grpc.Server, error) {
-	lis, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", port))
+func StartKeyClaimsGRPCServer(wsdServer *Server, port int) (*grpc.Server, net.Listener, error) {
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
-		return nil, fmt.Errorf("failed to listen: %w", err)
+		return nil, nil, fmt.Errorf("failed to listen: %w", err)
 	}
 	s := grpc.NewServer()
 	keymanager.RegisterKeyClaimsServiceServer(s, NewKeyClaimsGRPCServer(wsdServer))
-	log.Printf("gRPC server listening at %v", lis.Addr())
 	go func() {
 		if err := s.Serve(lis); err != nil {
 			log.Printf("gRPC server stopped: %v", err)
 		}
 	}()
-	return s, nil
+	return s, lis, nil
 }

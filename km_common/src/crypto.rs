@@ -1,4 +1,4 @@
-use crate::proto::{Status, HpkeAlgorithm, KemAlgorithm};
+use crate::proto::{HpkeAlgorithm, KemAlgorithm, Status};
 pub mod secret_box;
 use crate::crypto::secret_box::SecretBox;
 use clear_on_drop::clear_stack_on_return;

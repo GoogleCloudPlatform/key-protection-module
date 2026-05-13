@@ -50,6 +50,7 @@ func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
+	t.Cleanup(func() { srv.Shutdown(context.Background()) })
 
 	reqBody, err := protojson.MarshalOptions{EmitUnpopulated: true, UseProtoNames: true}.Marshal(&api.GenerateKeyRequest{
 		Algorithm: &keymanager.AlgorithmDetails{Type: "kem", Params: &keymanager.AlgorithmParams{Params: &keymanager.AlgorithmParams_KemId{KemId: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256}}},
@@ -98,6 +99,7 @@ func TestIntegrationGenerateKeysUniqueMappings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
+	t.Cleanup(func() { srv.Shutdown(context.Background()) })
 
 	// Generate two key sets.
 	var kemUUIDs [2]uuid.UUID
@@ -151,6 +153,7 @@ func TestIntegrationDestroyKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
+	t.Cleanup(func() { srv.Shutdown(context.Background()) })
 
 	// 1. Generate a key first
 	reqBody, _ := protojson.MarshalOptions{EmitUnpopulated: true, UseProtoNames: true}.Marshal(&api.GenerateKeyRequest{
@@ -219,6 +222,7 @@ func TestIntegrationAutoDestroy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
+	t.Cleanup(func() { srv.Shutdown(context.Background()) })
 
 	// 1. Generate a key with 1-second lifespan
 	reqBody, _ := protojson.MarshalOptions{EmitUnpopulated: true, UseProtoNames: true}.Marshal(&api.GenerateKeyRequest{
@@ -263,7 +267,7 @@ func TestIntegrationKeyClaims(t *testing.T) {
 		t.Fatalf("failed to create server: %v", err)
 	}
 	t.Cleanup(func() {
-		srv.listener.Close()
+		srv.Shutdown(context.Background())
 	})
 
 	// 1. Generate a KEM key
@@ -289,7 +293,7 @@ func TestIntegrationKeyClaims(t *testing.T) {
 			KeyHandle: &keymanager.KeyHandle{Handle: kemHandle},
 			KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
 		}
-		res, err := srv.handleGetClaims(req)
+		res, err := srv.handleGetClaims(context.Background(), req)
 		if err != nil {
 			t.Fatalf("unexpected error for KEM claims: %v", err)
 		}
@@ -311,7 +315,7 @@ func TestIntegrationKeyClaims(t *testing.T) {
 			KeyHandle: &keymanager.KeyHandle{Handle: kemHandle},
 			KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
 		}
-		res, err := srv.handleGetClaims(req)
+		res, err := srv.handleGetClaims(context.Background(), req)
 		if err != nil {
 			t.Fatalf("unexpected error for binding claims: %v", err)
 		}
@@ -326,7 +330,7 @@ func TestIntegrationKeyClaims(t *testing.T) {
 			KeyHandle: &keymanager.KeyHandle{Handle: uuid.New().String()},
 			KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
 		}
-		_, err := srv.handleGetClaims(req)
+		_, err := srv.handleGetClaims(context.Background(), req)
 		if err == nil {
 			t.Fatal("expected error for non-existent key")
 		}
@@ -337,7 +341,7 @@ func TestIntegrationKeyClaims(t *testing.T) {
 			KeyHandle: &keymanager.KeyHandle{Handle: kemHandle},
 			KeyType:   keymanager.KeyType_KEY_TYPE_UNSPECIFIED,
 		}
-		_, err := srv.handleGetClaims(req)
+		_, err := srv.handleGetClaims(context.Background(), req)
 		if err == nil {
 			t.Fatal("expected error for unsupported key type")
 		}
@@ -350,6 +354,7 @@ func TestIntegrationKeyClaimsGRPC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
+	t.Cleanup(func() { srv.Shutdown(context.Background()) })
 
 	// Start the server in a goroutine
 	go func() {
@@ -357,7 +362,6 @@ func TestIntegrationKeyClaimsGRPC(t *testing.T) {
 			t.Logf("server stopped: %v", err)
 		}
 	}()
-	defer srv.Shutdown(context.Background())
 
 	// Wait a bit for the server to start
 	time.Sleep(100 * time.Millisecond)
@@ -380,7 +384,7 @@ func TestIntegrationKeyClaimsGRPC(t *testing.T) {
 	kemHandle := resp.KeyHandle.Handle
 
 	// Now test gRPC GetKeyClaims
-	conn, err := grpc.Dial("localhost:50051", grpc.WithInsecure())
+	conn, err := grpc.Dial(srv.keyClaimListener.Addr().String(), grpc.WithInsecure())
 	if err != nil {
 		t.Fatalf("failed to connect to gRPC server: %v", err)
 	}
