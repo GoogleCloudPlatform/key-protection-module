@@ -72,9 +72,9 @@ message GetKEMKeyRequest {
 }
 
 message GetKEMKeyResponse {
-  keymanager.KemPublicKey  kem_pub_key             = 1;
-  keymanager.HpkePublicKey binding_pub_key         = 2;
-  uint64                   remaining_lifespan_secs = 3;
+  keymanager.KemPublicKey kem_pub_key = 1;
+  keymanager.HpkePublicKey binding_pub_key = 2;
+  uint64 remaining_lifespan_secs = 3;
 }
 
 message HeartbeatRequest {}
