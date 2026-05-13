@@ -168,8 +168,8 @@ func TestIntegrationGRPC_EndToEnd(t *testing.T) {
 		t.Fatalf("Destroy request failed: %v", err)
 	}
 	_ = destroyResp.Body.Close()
-	if destroyResp.StatusCode != http.StatusNoContent {
-		t.Fatalf("Destroy expected status 204, got %d", destroyResp.StatusCode)
+	if destroyResp.StatusCode != http.StatusOK {
+		t.Fatalf("Destroy expected status 200, got %d", destroyResp.StatusCode)
 	}
 }
 

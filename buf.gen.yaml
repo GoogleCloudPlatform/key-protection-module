@@ -14,4 +14,3 @@ plugins:
       - paths=source_relative
       - generate_unbound_methods=true
 
-

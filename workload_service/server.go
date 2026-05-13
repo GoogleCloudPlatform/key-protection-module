@@ -18,20 +18,22 @@ import (
 	"time"
 
 	"buf.build/go/protovalidate"
+
+	"google.golang.org/protobuf/encoding/protojson"
+
+	api "github.com/GoogleCloudPlatform/key-protection-module/workload_service/proto"
+	"github.com/google/uuid"
+	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"google.golang.org/protobuf/types/known/durationpb"
+
 	kpskcc "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/key_custody_core"
 	kpspb "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/proto"
 	keymanager "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto"
 	wskcc "github.com/GoogleCloudPlatform/key-protection-module/workload_service/key_custody_core"
-	api "github.com/GoogleCloudPlatform/key-protection-module/workload_service/proto"
-	"github.com/google/uuid"
-	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
-
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 // WorkloadService defines the interface for generating and managing binding keypairs.
