@@ -360,7 +360,7 @@ func New(_ context.Context, socketPath string, mode keymanager.KeyProtectionMech
 		if kpsVMIP == "" {
 			return nil, fmt.Errorf("KPS VM IP must be provided when using KEY_PROTECTION_VM mode")
 		}
-		target := fmt.Sprintf("%s:50051", kpsVMIP)
+		target := fmt.Sprintf("%s:%d", kpsVMIP, defaultKpsPort)
 
 		// Note on Transport Security:
 		// We use insecure.NewCredentials() here because transport-layer confidentiality

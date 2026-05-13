@@ -38,14 +38,13 @@ func newServerWithKPS(port int, kps KeyProtectionService) (*Server, error) {
 	bootToken := uuid.New().String()
 	kpsapi.RegisterKeyProtectionServiceServer(grpcServer, NewGrpcServer(kps, bootToken))
 
-	s := &Server{
+	return &Server{
 		grpcServer: grpcServer,
 		listener:   ln,
 		kps:        kps,
 		bootToken:  bootToken,
-	}
+	}, nil
 
-	return s, nil
 }
 
 // Serve starts the gRPC server listening on the given port.
