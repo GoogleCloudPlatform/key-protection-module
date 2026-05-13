@@ -39,7 +39,7 @@ func TestIntegrationGRPC_EndToEnd(t *testing.T) {
 	kpsSvc := kps.NewService()
 
 	// 3. Instantiate key_protection_service.NewGrpcServer()
-	kpsGrpcServer := kps.NewGrpcServer(kpsSvc)
+	kpsGrpcServer := kps.NewGrpcServer(kpsSvc, "test-boot-token")
 
 	// 4. Register the server and serve in a background goroutine
 	grpcServer := grpc.NewServer()
@@ -224,7 +224,7 @@ func setupGRPCRoundTrip(t *testing.T, stub kps.KeyProtectionService, kemUUID uui
 	}
 
 	grpcServer := grpc.NewServer()
-	kpspb.RegisterKeyProtectionServiceServer(grpcServer, kps.NewGrpcServer(stub))
+	kpspb.RegisterKeyProtectionServiceServer(grpcServer, kps.NewGrpcServer(stub, "test-boot-token"))
 	go func() { _ = grpcServer.Serve(listener) }()
 	t.Cleanup(grpcServer.Stop)
 
@@ -424,6 +424,9 @@ func (f *fakeKPSClient) DestroyKEMKey(context.Context, *kpspb.DestroyKEMKeyReque
 	return nil, nil
 }
 func (f *fakeKPSClient) GetKEMKey(context.Context, *kpspb.GetKEMKeyRequest, ...grpc.CallOption) (*kpspb.GetKEMKeyResponse, error) {
+	return nil, nil
+}
+func (f *fakeKPSClient) Heartbeat(context.Context, *kpspb.HeartbeatRequest, ...grpc.CallOption) (*kpspb.HeartbeatResponse, error) {
 	return nil, nil
 }
 

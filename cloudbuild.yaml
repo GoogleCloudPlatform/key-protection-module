@@ -98,6 +98,74 @@ steps:
         trap 'echo "Cleaning up VM..."; gcloud compute instances delete "$${VM_NAME}" --zone="$${ZONE}" --quiet || true' EXIT
         ./scripts/vm-test-monitor.sh "$${VM_NAME}" "$${ZONE}"
 
+  # Create KPS VM for heartbeat test
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: CreateKpsVM
+    waitFor: ['PushImages']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        VM_NAME="kpm-heartbeat-kps-${BUILD_ID}"
+        ZONE="${_ZONE}"
+        gcloud compute instances create "$${VM_NAME}" \
+          --zone="$${ZONE}" \
+          --machine-type=e2-medium \
+          --boot-disk-size=20GB \
+          --image-family=cos-stable \
+          --image-project=cos-cloud \
+          --maintenance-policy=TERMINATE \
+          --provisioning-model=SPOT \
+          --scopes=cloud-platform \
+          --metadata-from-file=startup-script=scripts/vm-test-startup.sh \
+          --metadata="location=${LOCATION},image=${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA},docker_env=KEY_PROTECTION_MECHANISM=KEY_PROTECTION_VM SERVICE_ROLE=SERVICE_ROLE_KPS,docker_args=-p 50050:50050"
+        
+        # Get internal IP and save to workspace
+        gcloud compute instances describe "$${VM_NAME}" \
+          --zone="$${ZONE}" \
+          --format='get(networkInterfaces[0].networkIP)' > /workspace/kps_ip.txt
+        echo "KPS VM IP: $(cat /workspace/kps_ip.txt)"
+
+  # Create WSD VM for heartbeat test
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: CreateWsdVM
+    waitFor: ['CreateKpsVM']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        VM_NAME="kpm-heartbeat-wsd-${BUILD_ID}"
+        ZONE="${_ZONE}"
+        KPS_IP=$(cat /workspace/kps_ip.txt)
+        gcloud compute instances create "$${VM_NAME}" \
+          --zone="$${ZONE}" \
+          --machine-type=e2-medium \
+          --boot-disk-size=20GB \
+          --image-family=cos-stable \
+          --image-project=cos-cloud \
+          --maintenance-policy=TERMINATE \
+          --provisioning-model=SPOT \
+          --scopes=cloud-platform \
+          --metadata-from-file=startup-script=scripts/vm-test-startup.sh \
+          --metadata="location=${LOCATION},image=${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA},docker_env=KEY_PROTECTION_MECHANISM=KEY_PROTECTION_VM SERVICE_ROLE=SERVICE_ROLE_WSD KPS_IP=$${KPS_IP}"
+
+  # Monitor Heartbeat and Cleanup
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: MonitorHeartbeat
+    waitFor: ['CreateWsdVM']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        KPS_VM="kpm-heartbeat-kps-${BUILD_ID}"
+        WSD_VM="kpm-heartbeat-wsd-${BUILD_ID}"
+        ZONE="${_ZONE}"
+        
+        # Ensure cleanup on exit
+        trap 'echo "Cleaning up VMs..."; gcloud compute instances delete "$${KPS_VM}" "$${WSD_VM}" --zone="$${ZONE}" --quiet || true' EXIT
+        
+        ./scripts/heartbeat-test-monitor.sh "$${WSD_VM}" "$${ZONE}"
+
   # Create a GCE VM for schema contract tests (reusing the test image with custom command)
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: CreateSchemaTestVM
@@ -134,7 +202,8 @@ steps:
   # Final validation: Containerized socket check for the production image
   - name: 'gcr.io/cloud-builders/docker'
     id: FinalSocketCheck
-    waitFor: ['MonitorVMTests', 'MonitorSchemaVMTests']
+    waitFor: ['MonitorVMTests', 'MonitorSchemaVMTests', 'MonitorHeartbeat']
+
     entrypoint: 'bash'
     args:
       - '-c'

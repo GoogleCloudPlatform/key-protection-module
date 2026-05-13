@@ -16,6 +16,7 @@ service KeyProtectionService {
   rpc EnumerateKEMKeys(EnumerateKEMKeysRequest) returns (EnumerateKEMKeysResponse);
   rpc DestroyKEMKey(DestroyKEMKeyRequest) returns (DestroyKEMKeyResponse);
   rpc GetKEMKey(GetKEMKeyRequest) returns (GetKEMKeyResponse);
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
 }
 
 message GenerateKEMKeypairRequest {
@@ -74,4 +75,10 @@ message GetKEMKeyResponse {
   keymanager.KemPublicKey kem_pub_key = 1;
   keymanager.HpkePublicKey binding_pub_key = 2;
   uint64 remaining_lifespan_secs = 3;
+}
+
+message HeartbeatRequest {}
+
+message HeartbeatResponse {
+  string kps_boot_token = 1;
 }

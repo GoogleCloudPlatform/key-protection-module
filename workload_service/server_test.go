@@ -11,12 +11,15 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	kpskcc "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/key_custody_core"
+	kpsapi "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/proto"
 	api "github.com/GoogleCloudPlatform/key-protection-module/workload_service/proto"
 	"github.com/google/uuid"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
@@ -72,6 +75,10 @@ func (m *mockWorkloadService) Open(bindingUUID uuid.UUID, enc, ciphertext, aad [
 
 func (m *mockWorkloadService) GetBindingKey(_ uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
 	return m.pubKey, m.algo, m.err
+}
+
+func (m *mockWorkloadService) DestroyAllKeys() error {
+	return nil
 }
 
 // mockKeyProtectionService implements KeyProtectionService for testing.
@@ -1520,5 +1527,75 @@ func TestFFIStatusFromGrpcError(t *testing.T) {
 				t.Fatalf("expected errors.Is(got, %v) to be true, got %v", tc.wantFFI, got)
 			}
 		})
+	}
+}
+
+func TestPerformHeartbeatSuccess(t *testing.T) {
+	srv := &Server{
+		kemToBindingMap: make(map[uuid.UUID]uuid.UUID),
+		mu:              sync.RWMutex{},
+	}
+	token := "test-token"
+	client := &mockKPSClient{token: token}
+	var cachedToken string
+
+	srv.performHeartbeat(context.Background(), client, &cachedToken)
+
+	if cachedToken != token {
+		t.Errorf("expected cached token %s, got %s", token, cachedToken)
+	}
+}
+
+func TestPerformHeartbeatTokenMismatch(t *testing.T) {
+	srv := &Server{
+		kemToBindingMap: make(map[uuid.UUID]uuid.UUID),
+		mu:              sync.RWMutex{},
+		workloadService: &mockWorkloadService{},
+	}
+	srv.kemToBindingMap[uuid.New()] = uuid.New()
+
+	client := &mockKPSClient{token: "new-token"}
+	cachedToken := "old-token"
+
+	srv.performHeartbeat(context.Background(), client, &cachedToken)
+
+	if cachedToken != "new-token" {
+		t.Errorf("expected cached token to be updated to new-token, got %s", cachedToken)
+	}
+	if len(srv.kemToBindingMap) != 0 {
+		t.Errorf("expected kemToBindingMap to be cleared, got size %d", len(srv.kemToBindingMap))
+	}
+}
+
+type mockKPSClient struct {
+	kpsapi.KeyProtectionServiceClient
+	token string
+	err   error
+}
+
+func (m *mockKPSClient) Heartbeat(_ context.Context, _ *kpsapi.HeartbeatRequest, _ ...grpc.CallOption) (*kpsapi.HeartbeatResponse, error) {
+	return &kpsapi.HeartbeatResponse{KpsBootToken: m.token}, m.err
+}
+
+func TestPerformHeartbeatTimeout(t *testing.T) {
+	srv := &Server{
+		kemToBindingMap: make(map[uuid.UUID]uuid.UUID),
+		mu:              sync.RWMutex{},
+		workloadService: &mockWorkloadService{},
+		initialBackoff:  1 * time.Millisecond,
+		maxBackoff:      4 * time.Millisecond,
+	}
+	// Add a dummy mapping to verify cleanup
+	kemUUID := uuid.New()
+	srv.kemToBindingMap[kemUUID] = uuid.New()
+
+	// Mock client that always fails
+	client := &mockKPSClient{err: fmt.Errorf("heartbeat failed")}
+
+	srv.performHeartbeat(context.Background(), client, new(string))
+
+	// Verify that cleanup was triggered (map should be empty)
+	if len(srv.kemToBindingMap) != 0 {
+		t.Errorf("expected kemToBindingMap to be cleared after persistent failure, got size %d", len(srv.kemToBindingMap))
 	}
 }
