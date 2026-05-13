@@ -16,7 +16,6 @@ service KeyProtectionService {
   rpc EnumerateKEMKeys(EnumerateKEMKeysRequest) returns (EnumerateKEMKeysResponse);
   rpc DestroyKEMKey(DestroyKEMKeyRequest) returns (DestroyKEMKeyResponse);
   rpc GetKEMKey(GetKEMKeyRequest) returns (GetKEMKeyResponse);
-  rpc GetCapabilities(GetCapabilitiesRequest) returns (GetCapabilitiesResponse);
 }
 
 message GenerateKEMKeypairRequest {
@@ -75,10 +74,4 @@ message GetKEMKeyResponse {
   keymanager.KemPublicKey kem_pub_key = 1;
   keymanager.HpkePublicKey binding_pub_key = 2;
   uint64 remaining_lifespan_secs = 3;
-}
-
-message GetCapabilitiesRequest {}
-
-message GetCapabilitiesResponse {
-  repeated keymanager.SupportedAlgorithm supported_algorithms = 1;
 }

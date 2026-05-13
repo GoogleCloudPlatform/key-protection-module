@@ -31,7 +31,7 @@ func TestRunWSD(t *testing.T) {
 
 	errChan := make(chan error, 1)
 	go func() {
-		errChan <- runWSD(ctx, socketPath, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
+		errChan <- runWSD(ctx, socketPath, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED, "")
 	}()
 
 	// Wait for the socket file to be created to ensure the server has started
@@ -75,7 +75,7 @@ func TestRunWSD_InvalidSocketPath(t *testing.T) {
 
 	socketPath := filepath.Join(tmpFile.Name(), "wsd.sock")
 
-	err = runWSD(ctx, socketPath, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
+	err = runWSD(ctx, socketPath, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED, "")
 	if err == nil {
 		t.Fatal("Expected runWSD() to return an error for invalid socket path")
 	}

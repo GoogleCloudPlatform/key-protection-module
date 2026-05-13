@@ -21,6 +21,7 @@ import (
 func main() {
 	socketPath := flag.String("socket", "/run/container_launcher/kmaserver.sock", "Path to the unix socket")
 	kpsPort := flag.Int("kps-port", 50050, "Port for the KPS gRPC server")
+	kpsVMIP := flag.String("kps-vm-ip", "", "IP address of the KPS VM (required when KEY_PROTECTION_MECHANISM=KEY_PROTECTION_VM and SERVICE_ROLE=WSD)")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -35,7 +36,7 @@ func main() {
 	if mode == keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM && role == keymanager.ServiceRole_SERVICE_ROLE_KPS {
 		err = runKPS(ctx, *kpsPort)
 	} else {
-		err = runWSD(ctx, *socketPath, mode)
+		err = runWSD(ctx, *socketPath, mode, *kpsVMIP)
 	}
 
 	if err != nil {
@@ -43,14 +44,14 @@ func main() {
 	}
 }
 
-func runWSD(ctx context.Context, socketPath string, mode keymanager.KeyProtectionMechanism) error {
+func runWSD(ctx context.Context, socketPath string, mode keymanager.KeyProtectionMechanism, kpsVMIP string) error {
 	socketDir := filepath.Dir(socketPath)
 	if err := os.MkdirAll(socketDir, 0755); err != nil {
 		return fmt.Errorf("failed to create directory for socket %s: %w", socketDir, err)
 	}
 
 	log.Printf("Initializing KeyManager WSD server on unix socket %s", socketPath)
-	srv, err := workloadservice.New(ctx, socketPath, mode)
+	srv, err := workloadservice.New(ctx, socketPath, mode, kpsVMIP)
 	if err != nil {
 		return fmt.Errorf("failed to create WSD server: %w", err)
 	}

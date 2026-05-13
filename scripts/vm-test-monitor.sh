@@ -51,4 +51,9 @@ for i in {1..60}; do
 done
 
 echo "TIMEOUT: VM tests did not complete within 10 minutes."
+echo "--- SERIAL LOGS START ---"
+# Re-fetch serial output one last time to have the latest state
+SERIAL_OUT=$(gcloud compute instances get-serial-port-output "$VM_NAME" --zone="$ZONE" 2>/dev/null || echo "")
+echo "$SERIAL_OUT"
+echo "--- SERIAL LOGS END ---"
 exit 1

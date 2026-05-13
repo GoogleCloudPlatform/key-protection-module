@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 
+	kpspb "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/proto"
 	"google.golang.org/grpc"
 )
 
@@ -28,9 +29,11 @@ func newServerWithKPS(port int, kps KeyProtectionService) (*Server, error) {
 		return nil, fmt.Errorf("failed to listen on TCP port %d: %w", port, err)
 	}
 
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(
+		grpc.UnaryInterceptor(ValidationInterceptor),
+	)
 
-	// TODO: Add the KPS gRPC API endpoints here.
+	kpspb.RegisterKeyProtectionServiceServer(grpcServer, NewGrpcServer(kps))
 
 	return &Server{
 		grpcServer: grpcServer,

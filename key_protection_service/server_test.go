@@ -5,6 +5,10 @@ import (
 	"net"
 	"testing"
 	"time"
+
+	kpspb "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/proto"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 func TestServerRunAndShutdown(t *testing.T) {
@@ -53,5 +57,40 @@ func TestServerInvalidPort(t *testing.T) {
 	_, err := NewServer(-1)
 	if err == nil {
 		t.Fatal("Expected NewServer() to return an error for invalid port -1")
+	}
+}
+
+func TestServerGRPCRegistration(t *testing.T) {
+	mock := &mockKPS{}
+
+	srv, err := newServerWithKPS(0, mock)
+	if err != nil {
+		t.Fatalf("failed to create KPS server: %v", err)
+	}
+
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- srv.Serve()
+	}()
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(ctx)
+	}()
+
+	// Allow server to start up
+	time.Sleep(100 * time.Millisecond)
+
+	addr := srv.listener.Addr().String()
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("failed to dial grpc server: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	client := kpspb.NewKeyProtectionServiceClient(conn)
+	_, err = client.EnumerateKEMKeys(context.Background(), &kpspb.EnumerateKEMKeysRequest{Limit: 1, Offset: 0})
+	if err != nil {
+		t.Fatalf("gRPC call failed: %v", err)
 	}
 }

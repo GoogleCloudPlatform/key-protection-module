@@ -10,6 +10,8 @@ github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260410183711-0
 github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260410183711-07bdbfebb244/go.mod h1:STnMvdbs5Iknm+bo0vx8FNwak7oqiHcN54w36pCHEb4=
 github.com/GoogleCloudPlatform/key-protection-module v0.0.0-20260506170557-c3a66d62acbf h1:QljpFSpYT4kK1VGbveXUJbQ21+PA46F1WEZd2fBGh5A=
 github.com/GoogleCloudPlatform/key-protection-module v0.0.0-20260506170557-c3a66d62acbf/go.mod h1:lL1e6DwHCKIQLhD+Wq9ClZPHypLrgY0RHHeA1DXUwUk=
+github.com/GoogleCloudPlatform/key-protection-module v0.0.0-20260513054212-f2adec2162e7 h1:tnoPTSQNFZZn3Xbvjj6olz+vqacVf1VAuX7zwgpWeLE=
+github.com/GoogleCloudPlatform/key-protection-module v0.0.0-20260513054212-f2adec2162e7/go.mod h1:vCM+xOSPWjtPSbjYdocgOnG4ZaVmb2zvhsGMeFXG0z4=
 github.com/cenkalti/backoff/v4 v4.3.0 h1:MyRJ/UdXutAwSAT+s3wNd7MfTIcy71VQueUuFK343L8=
 github.com/cenkalti/backoff/v4 v4.3.0/go.mod h1:Y3VNntkOUPxTVeUxJ/G5vcM//AlwfmyYozVcomhLiZE=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=

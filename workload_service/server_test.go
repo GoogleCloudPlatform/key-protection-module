@@ -22,6 +22,8 @@ import (
 
 	kps "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service"
 	keymanager "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func newTestServer(t *testing.T, kemGen kps.KeyProtectionService, bindingGen WorkloadService) *Server {
@@ -93,29 +95,29 @@ type mockKeyProtectionService struct {
 	enumerateErr          error
 }
 
-func (m *mockKeyProtectionService) GenerateKEMKeypair(_ *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+func (m *mockKeyProtectionService) GenerateKEMKeypair(_ context.Context, _ *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	m.receivedPubKey = bindingPubKey
 	m.receivedLifespan = lifespanSecs
 	return m.uuid, m.pubKey, m.err
 }
 
-func (m *mockKeyProtectionService) EnumerateKEMKeys(_, _ int) ([]kpskcc.KEMKeyInfo, bool, error) {
+func (m *mockKeyProtectionService) EnumerateKEMKeys(_ context.Context, _, _ int) ([]kpskcc.KEMKeyInfo, bool, error) {
 	return m.enumeratedKeys, false, m.enumerateErr
 }
 
-func (m *mockKeyProtectionService) DestroyKEMKey(kemUUID uuid.UUID) error {
+func (m *mockKeyProtectionService) DestroyKEMKey(_ context.Context, kemUUID uuid.UUID) error {
 	m.destroyedUUID = kemUUID
 	return m.destroyErr
 }
 
-func (m *mockKeyProtectionService) DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error) {
+func (m *mockKeyProtectionService) DecapAndSeal(_ context.Context, kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error) {
 	m.receivedKEMUUID = kemUUID
 	m.receivedEncKey = encapsulatedKey
 	m.receivedAAD = aad
 	return m.sealEnc, m.sealedCT, m.err
 }
 
-func (m *mockKeyProtectionService) GetKEMKey(_ uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+func (m *mockKeyProtectionService) GetKEMKey(_ context.Context, _ uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
 	return m.pubKey, m.bindingPubKey, m.algo, m.remainingLifespanSecs, m.err
 }
 
@@ -1452,6 +1454,70 @@ func TestGetClaimsFromChannel(t *testing.T) {
 			}
 			if result != expectedReply {
 				t.Errorf("result mismatch: expected %v, got %v", expectedReply, result)
+			}
+		})
+	}
+}
+
+func TestHttpStatusFromError_FFISentinels(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want int
+	}{
+		{"nil", nil, http.StatusOK},
+		{"not_found", keymanager.Status_STATUS_NOT_FOUND.ToStatus(), http.StatusNotFound},
+		{"invalid_argument", keymanager.Status_STATUS_INVALID_ARGUMENT.ToStatus(), http.StatusBadRequest},
+		{"unsupported_algorithm", keymanager.Status_STATUS_UNSUPPORTED_ALGORITHM.ToStatus(), http.StatusBadRequest},
+		{"invalid_key", keymanager.Status_STATUS_INVALID_KEY.ToStatus(), http.StatusBadRequest},
+		{"permission_denied", keymanager.Status_STATUS_PERMISSION_DENIED.ToStatus(), http.StatusForbidden},
+		{"unauthenticated", keymanager.Status_STATUS_UNAUTHENTICATED.ToStatus(), http.StatusUnauthorized},
+		{"already_exists", keymanager.Status_STATUS_ALREADY_EXISTS.ToStatus(), http.StatusConflict},
+		{"internal_default", errors.New("boom"), http.StatusInternalServerError},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := httpStatusFromError(tc.err); got != tc.want {
+				t.Errorf("httpStatusFromError(%v) = %d, want %d", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFFIStatusFromGrpcError(t *testing.T) {
+	cases := []struct {
+		name     string
+		err      error
+		wantNil  bool
+		wantFFI  keymanager.Status
+		wantSame bool // true if helper should pass the err through unchanged
+	}{
+		{"nil", nil, true, 0, false},
+		{"not_found", status.Error(codes.NotFound, "x"), false, keymanager.Status_STATUS_NOT_FOUND, false},
+		{"invalid_argument", status.Error(codes.InvalidArgument, "x"), false, keymanager.Status_STATUS_INVALID_ARGUMENT, false},
+		{"permission_denied", status.Error(codes.PermissionDenied, "x"), false, keymanager.Status_STATUS_PERMISSION_DENIED, false},
+		{"unauthenticated", status.Error(codes.Unauthenticated, "x"), false, keymanager.Status_STATUS_UNAUTHENTICATED, false},
+		{"already_exists", status.Error(codes.AlreadyExists, "x"), false, keymanager.Status_STATUS_ALREADY_EXISTS, false},
+		{"unavailable_passes_through", status.Error(codes.Unavailable, "x"), false, 0, true},
+		{"non_grpc_passes_through", errors.New("plain"), false, 0, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ffiStatusFromGrpcError(tc.err)
+			if tc.wantNil {
+				if got != nil {
+					t.Fatalf("expected nil, got %v", got)
+				}
+				return
+			}
+			if tc.wantSame {
+				if got != tc.err {
+					t.Fatalf("expected pass-through, got %v", got)
+				}
+				return
+			}
+			if !errors.Is(got, tc.wantFFI) {
+				t.Fatalf("expected errors.Is(got, %v) to be true, got %v", tc.wantFFI, got)
 			}
 		})
 	}

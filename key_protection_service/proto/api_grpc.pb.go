@@ -24,7 +24,6 @@ const (
 	KeyProtectionService_EnumerateKEMKeys_FullMethodName   = "/keymanager.key_protection_service.KeyProtectionService/EnumerateKEMKeys"
 	KeyProtectionService_DestroyKEMKey_FullMethodName      = "/keymanager.key_protection_service.KeyProtectionService/DestroyKEMKey"
 	KeyProtectionService_GetKEMKey_FullMethodName          = "/keymanager.key_protection_service.KeyProtectionService/GetKEMKey"
-	KeyProtectionService_GetCapabilities_FullMethodName    = "/keymanager.key_protection_service.KeyProtectionService/GetCapabilities"
 )
 
 // KeyProtectionServiceClient is the client API for KeyProtectionService service.
@@ -36,7 +35,6 @@ type KeyProtectionServiceClient interface {
 	EnumerateKEMKeys(ctx context.Context, in *EnumerateKEMKeysRequest, opts ...grpc.CallOption) (*EnumerateKEMKeysResponse, error)
 	DestroyKEMKey(ctx context.Context, in *DestroyKEMKeyRequest, opts ...grpc.CallOption) (*DestroyKEMKeyResponse, error)
 	GetKEMKey(ctx context.Context, in *GetKEMKeyRequest, opts ...grpc.CallOption) (*GetKEMKeyResponse, error)
-	GetCapabilities(ctx context.Context, in *GetCapabilitiesRequest, opts ...grpc.CallOption) (*GetCapabilitiesResponse, error)
 }
 
 type keyProtectionServiceClient struct {
@@ -97,16 +95,6 @@ func (c *keyProtectionServiceClient) GetKEMKey(ctx context.Context, in *GetKEMKe
 	return out, nil
 }
 
-func (c *keyProtectionServiceClient) GetCapabilities(ctx context.Context, in *GetCapabilitiesRequest, opts ...grpc.CallOption) (*GetCapabilitiesResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetCapabilitiesResponse)
-	err := c.cc.Invoke(ctx, KeyProtectionService_GetCapabilities_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // KeyProtectionServiceServer is the server API for KeyProtectionService service.
 // All implementations should embed UnimplementedKeyProtectionServiceServer
 // for forward compatibility.
@@ -116,7 +104,6 @@ type KeyProtectionServiceServer interface {
 	EnumerateKEMKeys(context.Context, *EnumerateKEMKeysRequest) (*EnumerateKEMKeysResponse, error)
 	DestroyKEMKey(context.Context, *DestroyKEMKeyRequest) (*DestroyKEMKeyResponse, error)
 	GetKEMKey(context.Context, *GetKEMKeyRequest) (*GetKEMKeyResponse, error)
-	GetCapabilities(context.Context, *GetCapabilitiesRequest) (*GetCapabilitiesResponse, error)
 }
 
 // UnimplementedKeyProtectionServiceServer should be embedded to have
@@ -140,9 +127,6 @@ func (UnimplementedKeyProtectionServiceServer) DestroyKEMKey(context.Context, *D
 }
 func (UnimplementedKeyProtectionServiceServer) GetKEMKey(context.Context, *GetKEMKeyRequest) (*GetKEMKeyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetKEMKey not implemented")
-}
-func (UnimplementedKeyProtectionServiceServer) GetCapabilities(context.Context, *GetCapabilitiesRequest) (*GetCapabilitiesResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetCapabilities not implemented")
 }
 func (UnimplementedKeyProtectionServiceServer) testEmbeddedByValue() {}
 
@@ -254,24 +238,6 @@ func _KeyProtectionService_GetKEMKey_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
-func _KeyProtectionService_GetCapabilities_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetCapabilitiesRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(KeyProtectionServiceServer).GetCapabilities(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: KeyProtectionService_GetCapabilities_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(KeyProtectionServiceServer).GetCapabilities(ctx, req.(*GetCapabilitiesRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 // KeyProtectionService_ServiceDesc is the grpc.ServiceDesc for KeyProtectionService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -298,10 +264,6 @@ var KeyProtectionService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetKEMKey",
 			Handler:    _KeyProtectionService_GetKEMKey_Handler,
-		},
-		{
-			MethodName: "GetCapabilities",
-			Handler:    _KeyProtectionService_GetCapabilities_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
