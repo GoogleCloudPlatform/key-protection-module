@@ -60,6 +60,14 @@ if ! timeout 30s bash -c "until [ -S '$SOCKET_PATH' ]; do sleep 1; done"; then
     exit 1
 fi
 
+echo "Checking for heartbeat success in agent log..."
+# The agent should perform a heartbeat handshake with KPS
+if ! timeout 30s bash -c "until grep -q 'Heartbeat handshake successful' '$AGENT_LOG'; do sleep 1; done"; then
+    echo "ERROR: Heartbeat handshake not successful within 30s."
+    exit 1
+fi
+echo "Heartbeat handshake successful!"
+
 CURL=(curl --silent --show-error --unix-socket "$SOCKET_PATH")
 
 # --- 1. GET /v1/capabilities -> 200, mentions DHKEM_X25519
