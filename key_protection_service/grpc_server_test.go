@@ -105,198 +105,320 @@ func TestNewGrpcServer(t *testing.T) {
 func TestGenerateKEMKeypair(t *testing.T) {
 	id := uuid.New()
 	pubKey := []byte("pub-key")
-	mock := &mockKPS{
-		generateKEMKeypairFn: func(_ context.Context, _ *keymanager.HpkeAlgorithm, _ []byte, _ uint64) (uuid.UUID, []byte, error) {
-			return id, pubKey, nil
+
+	tests := []struct {
+		name                 string
+		req                  *kpspb.GenerateKEMKeypairRequest
+		generateKEMKeypairFn func(ctx context.Context, algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
+		wantCode             codes.Code
+		wantHandle           string
+		wantKemAlgo          keymanager.KemAlgorithm
+	}{
+		{
+			name: "success",
+			req: &kpspb.GenerateKEMKeypairRequest{
+				Algo:          &keymanager.HpkeAlgorithm{Kem: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256},
+				BindingPubKey: &keymanager.HpkePublicKey{PublicKey: []byte("binding")},
+				LifespanSecs:  3600,
+			},
+			generateKEMKeypairFn: func(_ context.Context, _ *keymanager.HpkeAlgorithm, _ []byte, _ uint64) (uuid.UUID, []byte, error) {
+				return id, pubKey, nil
+			},
+			wantCode:    codes.OK,
+			wantHandle:  id.String(),
+			wantKemAlgo: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+		},
+		{
+			name: "svc error",
+			req: &kpspb.GenerateKEMKeypairRequest{
+				Algo:          &keymanager.HpkeAlgorithm{Kem: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256},
+				BindingPubKey: &keymanager.HpkePublicKey{PublicKey: []byte("binding")},
+				LifespanSecs:  3600,
+			},
+			generateKEMKeypairFn: func(_ context.Context, _ *keymanager.HpkeAlgorithm, _ []byte, _ uint64) (uuid.UUID, []byte, error) {
+				return uuid.Nil, nil, keymanager.Status_STATUS_INVALID_ARGUMENT.ToStatus()
+			},
+			wantCode: codes.InvalidArgument,
 		},
 	}
-	server := &grpcServer{svc: mock}
 
-	req := &kpspb.GenerateKEMKeypairRequest{
-		Algo:          &keymanager.HpkeAlgorithm{Kem: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256},
-		BindingPubKey: &keymanager.HpkePublicKey{PublicKey: []byte("binding")},
-		LifespanSecs:  3600,
-	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := &mockKPS{
+				generateKEMKeypairFn: tc.generateKEMKeypairFn,
+			}
+			server := &grpcServer{svc: mock}
 
-	resp, err := server.GenerateKEMKeypair(context.Background(), req)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if resp.KeyHandle.GetHandle() != id.String() {
-		t.Errorf("expected id %s, got %s", id.String(), resp.KeyHandle.GetHandle())
-	}
-	if resp.KemPubKey.GetAlgorithm() != req.Algo.GetKem() {
-		t.Errorf("expected alg %v, got %v", req.Algo.GetKem(), resp.KemPubKey.GetAlgorithm())
-	}
+			resp, err := server.GenerateKEMKeypair(context.Background(), tc.req)
+			if status.Code(err) != tc.wantCode {
+				t.Fatalf("expected code %v, got %v (err: %v)", tc.wantCode, status.Code(err), err)
+			}
 
-	// Error case
-	mock.generateKEMKeypairFn = func(_ context.Context, _ *keymanager.HpkeAlgorithm, _ []byte, _ uint64) (uuid.UUID, []byte, error) {
-		return uuid.Nil, nil, keymanager.Status_STATUS_INVALID_ARGUMENT.ToStatus()
-	}
-	_, err = server.GenerateKEMKeypair(context.Background(), req)
-	if status.Code(err) != codes.InvalidArgument {
-		t.Errorf("expected code InvalidArgument, got %v", status.Code(err))
+			if err == nil {
+				if resp.KeyHandle.GetHandle() != tc.wantHandle {
+					t.Errorf("expected id %s, got %s", tc.wantHandle, resp.KeyHandle.GetHandle())
+				}
+				if resp.KemPubKey.GetAlgorithm() != tc.wantKemAlgo {
+					t.Errorf("expected alg %v, got %v", tc.wantKemAlgo, resp.KemPubKey.GetAlgorithm())
+				}
+			}
+		})
 	}
 }
 
 func TestDecapAndSeal(t *testing.T) {
 	id := uuid.New()
-	mock := &mockKPS{
-		decapAndSealFn: func(_ context.Context, _ uuid.UUID, _, _ []byte) ([]byte, []byte, error) {
-			return []byte("seal-enc"), []byte("sealed-ct"), nil
+
+	tests := []struct {
+		name           string
+		req            *kpspb.DecapAndSealRequest
+		decapAndSealFn func(ctx context.Context, id uuid.UUID, ct, aad []byte) ([]byte, []byte, error)
+		wantCode       codes.Code
+		wantSealEnc    string
+	}{
+		{
+			name: "success",
+			req: &kpspb.DecapAndSealRequest{
+				KeyHandle:  &keymanager.KeyHandle{Handle: id.String()},
+				Ciphertext: &keymanager.KemCiphertext{Ciphertext: []byte("ct")},
+				Aad:        []byte("aad"),
+			},
+			decapAndSealFn: func(_ context.Context, _ uuid.UUID, _, _ []byte) ([]byte, []byte, error) {
+				return []byte("seal-enc"), []byte("sealed-ct"), nil
+			},
+			wantCode:    codes.OK,
+			wantSealEnc: "seal-enc",
+		},
+		{
+			name: "invalid uuid",
+			req: &kpspb.DecapAndSealRequest{
+				KeyHandle:  &keymanager.KeyHandle{Handle: "invalid"},
+				Ciphertext: &keymanager.KemCiphertext{Ciphertext: []byte("ct")},
+				Aad:        []byte("aad"),
+			},
+			decapAndSealFn: func(_ context.Context, _ uuid.UUID, _, _ []byte) ([]byte, []byte, error) {
+				return nil, nil, nil
+			},
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "svc error",
+			req: &kpspb.DecapAndSealRequest{
+				KeyHandle:  &keymanager.KeyHandle{Handle: id.String()},
+				Ciphertext: &keymanager.KemCiphertext{Ciphertext: []byte("ct")},
+				Aad:        []byte("aad"),
+			},
+			decapAndSealFn: func(_ context.Context, _ uuid.UUID, _, _ []byte) ([]byte, []byte, error) {
+				return nil, nil, keymanager.Status_STATUS_NOT_FOUND.ToStatus()
+			},
+			wantCode: codes.NotFound,
 		},
 	}
-	server := &grpcServer{svc: mock}
 
-	req := &kpspb.DecapAndSealRequest{
-		KeyHandle:  &keymanager.KeyHandle{Handle: id.String()},
-		Ciphertext: &keymanager.KemCiphertext{Ciphertext: []byte("ct")},
-		Aad:        []byte("aad"),
-	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := &mockKPS{
+				decapAndSealFn: tc.decapAndSealFn,
+			}
+			server := &grpcServer{svc: mock}
 
-	resp, err := server.DecapAndSeal(context.Background(), req)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if string(resp.SealEnc) != "seal-enc" {
-		t.Errorf("expected seal-enc, got %s", resp.SealEnc)
-	}
-
-	// Invalid UUID
-	req.KeyHandle.Handle = "invalid"
-	_, err = server.DecapAndSeal(context.Background(), req)
-	if status.Code(err) != codes.InvalidArgument {
-		t.Errorf("expected code InvalidArgument, got %v", status.Code(err))
-	}
-
-	// SVC Error case
-	req.KeyHandle.Handle = id.String()
-	mock.decapAndSealFn = func(_ context.Context, _ uuid.UUID, _, _ []byte) ([]byte, []byte, error) {
-		return nil, nil, keymanager.Status_STATUS_NOT_FOUND.ToStatus()
-	}
-	_, err = server.DecapAndSeal(context.Background(), req)
-	if status.Code(err) != codes.NotFound {
-		t.Errorf("expected code NotFound, got %v", status.Code(err))
+			resp, err := server.DecapAndSeal(context.Background(), tc.req)
+			if status.Code(err) != tc.wantCode {
+				t.Fatalf("expected code %v, got %v (err: %v)", tc.wantCode, status.Code(err), err)
+			}
+			if err == nil && string(resp.SealEnc) != tc.wantSealEnc {
+				t.Errorf("expected seal-enc %s, got %s", tc.wantSealEnc, resp.SealEnc)
+			}
+		})
 	}
 }
 
 func TestEnumerateKEMKeys(t *testing.T) {
 	id := uuid.New()
-	mock := &mockKPS{
-		enumerateKEMKeysFn: func(_ context.Context, _, _ int) ([]kpskcc.KEMKeyInfo, bool, error) {
-			return []kpskcc.KEMKeyInfo{
-				{
-					ID:                    id,
-					Algorithm:             &keymanager.HpkeAlgorithm{Kem: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256},
-					KEMPubKey:             []byte("pub"),
-					RemainingLifespanSecs: 100,
-				},
-			}, true, nil
+
+	tests := []struct {
+		name               string
+		req                *kpspb.EnumerateKEMKeysRequest
+		enumerateKEMKeysFn func(ctx context.Context, limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error)
+		wantCode           codes.Code
+		wantHasMore        bool
+		wantCount          int
+		wantHandle         string
+	}{
+		{
+			name: "success",
+			req: &kpspb.EnumerateKEMKeysRequest{
+				Limit:  10,
+				Offset: 0,
+			},
+			enumerateKEMKeysFn: func(_ context.Context, _, _ int) ([]kpskcc.KEMKeyInfo, bool, error) {
+				return []kpskcc.KEMKeyInfo{
+					{
+						ID:                    id,
+						Algorithm:             &keymanager.HpkeAlgorithm{Kem: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256},
+						KEMPubKey:             []byte("pub"),
+						RemainingLifespanSecs: 100,
+					},
+				}, true, nil
+			},
+			wantCode:    codes.OK,
+			wantHasMore: true,
+			wantCount:   1,
+			wantHandle:  id.String(),
+		},
+		{
+			name: "svc error",
+			req: &kpspb.EnumerateKEMKeysRequest{
+				Limit:  10,
+				Offset: 0,
+			},
+			enumerateKEMKeysFn: func(_ context.Context, _, _ int) ([]kpskcc.KEMKeyInfo, bool, error) {
+				return nil, false, keymanager.Status_STATUS_PERMISSION_DENIED.ToStatus()
+			},
+			wantCode: codes.PermissionDenied,
 		},
 	}
-	server := &grpcServer{svc: mock}
 
-	req := &kpspb.EnumerateKEMKeysRequest{
-		Limit:  10,
-		Offset: 0,
-	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := &mockKPS{
+				enumerateKEMKeysFn: tc.enumerateKEMKeysFn,
+			}
+			server := &grpcServer{svc: mock}
 
-	resp, err := server.EnumerateKEMKeys(context.Background(), req)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !resp.HasMore {
-		t.Errorf("expected HasMore true")
-	}
-	if len(resp.Keys) != 1 {
-		t.Fatalf("expected 1 key, got %d", len(resp.Keys))
-	}
-	if resp.Keys[0].KeyHandle.GetHandle() != id.String() {
-		t.Errorf("expected id %s, got %s", id.String(), resp.Keys[0].KeyHandle.GetHandle())
-	}
-
-	// SVC Error case
-	mock.enumerateKEMKeysFn = func(_ context.Context, _, _ int) ([]kpskcc.KEMKeyInfo, bool, error) {
-		return nil, false, keymanager.Status_STATUS_PERMISSION_DENIED.ToStatus()
-	}
-	_, err = server.EnumerateKEMKeys(context.Background(), req)
-	if status.Code(err) != codes.PermissionDenied {
-		t.Errorf("expected code PermissionDenied, got %v", status.Code(err))
+			resp, err := server.EnumerateKEMKeys(context.Background(), tc.req)
+			if status.Code(err) != tc.wantCode {
+				t.Fatalf("expected code %v, got %v (err: %v)", tc.wantCode, status.Code(err), err)
+			}
+			if err == nil {
+				if resp.HasMore != tc.wantHasMore {
+					t.Errorf("expected HasMore %v, got %v", tc.wantHasMore, resp.HasMore)
+				}
+				if len(resp.Keys) != tc.wantCount {
+					t.Fatalf("expected %d keys, got %d", tc.wantCount, len(resp.Keys))
+				}
+				if tc.wantCount > 0 && resp.Keys[0].KeyHandle.GetHandle() != tc.wantHandle {
+					t.Errorf("expected id %s, got %s", tc.wantHandle, resp.Keys[0].KeyHandle.GetHandle())
+				}
+			}
+		})
 	}
 }
 
 func TestDestroyKEMKey(t *testing.T) {
 	id := uuid.New()
-	mock := &mockKPS{
-		destroyKEMKeyFn: func(_ context.Context, _ uuid.UUID) error {
-			return nil
+
+	tests := []struct {
+		name            string
+		req             *kpspb.DestroyKEMKeyRequest
+		destroyKEMKeyFn func(ctx context.Context, id uuid.UUID) error
+		wantCode        codes.Code
+	}{
+		{
+			name: "success",
+			req: &kpspb.DestroyKEMKeyRequest{
+				KeyHandle: &keymanager.KeyHandle{Handle: id.String()},
+			},
+			destroyKEMKeyFn: func(_ context.Context, _ uuid.UUID) error {
+				return nil
+			},
+			wantCode: codes.OK,
+		},
+		{
+			name: "invalid uuid",
+			req: &kpspb.DestroyKEMKeyRequest{
+				KeyHandle: &keymanager.KeyHandle{Handle: "invalid"},
+			},
+			destroyKEMKeyFn: func(_ context.Context, _ uuid.UUID) error {
+				return nil
+			},
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "svc error",
+			req: &kpspb.DestroyKEMKeyRequest{
+				KeyHandle: &keymanager.KeyHandle{Handle: id.String()},
+			},
+			destroyKEMKeyFn: func(_ context.Context, _ uuid.UUID) error {
+				return keymanager.Status_STATUS_NOT_FOUND.ToStatus()
+			},
+			wantCode: codes.NotFound,
 		},
 	}
-	server := &grpcServer{svc: mock}
 
-	req := &kpspb.DestroyKEMKeyRequest{
-		KeyHandle: &keymanager.KeyHandle{Handle: id.String()},
-	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := &mockKPS{
+				destroyKEMKeyFn: tc.destroyKEMKeyFn,
+			}
+			server := &grpcServer{svc: mock}
 
-	_, err := server.DestroyKEMKey(context.Background(), req)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// Invalid UUID
-	req.KeyHandle.Handle = "invalid"
-	_, err = server.DestroyKEMKey(context.Background(), req)
-	if status.Code(err) != codes.InvalidArgument {
-		t.Errorf("expected code InvalidArgument, got %v", status.Code(err))
-	}
-
-	// SVC Error case
-	req.KeyHandle.Handle = id.String()
-	mock.destroyKEMKeyFn = func(_ context.Context, _ uuid.UUID) error {
-		return keymanager.Status_STATUS_NOT_FOUND.ToStatus()
-	}
-	_, err = server.DestroyKEMKey(context.Background(), req)
-	if status.Code(err) != codes.NotFound {
-		t.Errorf("expected code NotFound, got %v", status.Code(err))
+			_, err := server.DestroyKEMKey(context.Background(), tc.req)
+			if status.Code(err) != tc.wantCode {
+				t.Fatalf("expected code %v, got %v (err: %v)", tc.wantCode, status.Code(err), err)
+			}
+		})
 	}
 }
 
 func TestGetKEMKey(t *testing.T) {
 	id := uuid.New()
-	mock := &mockKPS{
-		GetKEMKeyFn: func(_ context.Context, _ uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
-			return []byte("kem-pub"), []byte("binding-pub"), &keymanager.HpkeAlgorithm{Kem: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256}, 100, nil
+
+	tests := []struct {
+		name        string
+		req         *kpspb.GetKEMKeyRequest
+		GetKEMKeyFn func(ctx context.Context, id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error)
+		wantCode    codes.Code
+		wantPubKey  string
+	}{
+		{
+			name: "success",
+			req: &kpspb.GetKEMKeyRequest{
+				KeyHandle: &keymanager.KeyHandle{Handle: id.String()},
+			},
+			GetKEMKeyFn: func(_ context.Context, _ uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+				return []byte("kem-pub"), []byte("binding-pub"), &keymanager.HpkeAlgorithm{Kem: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256}, 100, nil
+			},
+			wantCode:   codes.OK,
+			wantPubKey: "kem-pub",
+		},
+		{
+			name: "invalid uuid",
+			req: &kpspb.GetKEMKeyRequest{
+				KeyHandle: &keymanager.KeyHandle{Handle: "invalid"},
+			},
+			GetKEMKeyFn: func(_ context.Context, _ uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+				return nil, nil, nil, 0, nil
+			},
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "svc error",
+			req: &kpspb.GetKEMKeyRequest{
+				KeyHandle: &keymanager.KeyHandle{Handle: id.String()},
+			},
+			GetKEMKeyFn: func(_ context.Context, _ uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+				return nil, nil, nil, 0, keymanager.Status_STATUS_NOT_FOUND.ToStatus()
+			},
+			wantCode: codes.NotFound,
 		},
 	}
-	server := &grpcServer{svc: mock}
 
-	req := &kpspb.GetKEMKeyRequest{
-		KeyHandle: &keymanager.KeyHandle{Handle: id.String()},
-	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := &mockKPS{
+				GetKEMKeyFn: tc.GetKEMKeyFn,
+			}
+			server := &grpcServer{svc: mock}
 
-	resp, err := server.GetKEMKey(context.Background(), req)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if string(resp.KemPubKey.PublicKey) != "kem-pub" {
-		t.Errorf("expected kem-pub, got %s", resp.KemPubKey.PublicKey)
-	}
-
-	// Invalid UUID
-	req.KeyHandle.Handle = "invalid"
-	_, err = server.GetKEMKey(context.Background(), req)
-	if status.Code(err) != codes.InvalidArgument {
-		t.Errorf("expected code InvalidArgument, got %v", status.Code(err))
-	}
-
-	// SVC Error case
-	req.KeyHandle.Handle = id.String()
-	mock.GetKEMKeyFn = func(_ context.Context, _ uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
-		return nil, nil, nil, 0, keymanager.Status_STATUS_NOT_FOUND.ToStatus()
-	}
-	_, err = server.GetKEMKey(context.Background(), req)
-	if status.Code(err) != codes.NotFound {
-		t.Errorf("expected code NotFound, got %v", status.Code(err))
+			resp, err := server.GetKEMKey(context.Background(), tc.req)
+			if status.Code(err) != tc.wantCode {
+				t.Fatalf("expected code %v, got %v (err: %v)", tc.wantCode, status.Code(err), err)
+			}
+			if err == nil && string(resp.KemPubKey.PublicKey) != tc.wantPubKey {
+				t.Errorf("expected %s, got %s", tc.wantPubKey, resp.KemPubKey.PublicKey)
+			}
+		})
 	}
 }
 
