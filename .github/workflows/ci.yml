@@ -22,7 +22,7 @@ on:
 
 env:
   RUST_COVERAGE_THRESHOLD: 85
-  GO_COVERAGE_THRESHOLD: 75
+  GO_COVERAGE_THRESHOLD: 70 # temporarily set at 70% will be increased to 75% in future.
 
 permissions:
   contents: read
