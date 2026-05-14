@@ -157,7 +157,7 @@ jobs:
           set -euo pipefail
           cd keymanager/attestation_service
           go build -v ./...
-          # Run unit tests with coverage and enforce 80% threshold (only runs on primary Linux matrix)
+          # Run unit tests with coverage and enforce 75% threshold (only runs on primary Linux matrix)
           go test -v -race -coverprofile=coverage.txt -covermode=atomic ./
           
           echo "Checking coverage for Attestation Service..."
@@ -301,9 +301,14 @@ jobs:
     name: Cargo Audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions-rust-lang/audit@72c09e02f132669d52284a3323acdb503cfc1a24 #v1.2.7
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          submodules: recursive
+      - name: Audit Root
+        uses: actions-rust-lang/audit@72c09e02f132669d52284a3323acdb503cfc1a24 #v1.2.7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          workingDirectory: .
       - name: Audit WSD Fuzz
         uses: actions-rust-lang/audit@72c09e02f132669d52284a3323acdb503cfc1a24 #v1.2.7
         with:
