@@ -31,7 +31,7 @@ func TestRunWSD(t *testing.T) {
 
 	errChan := make(chan error, 1)
 	go func() {
-		errChan <- runWSD(ctx, socketPath, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED, "")
+		errChan <- runWsd(ctx, socketPath, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED, "")
 	}()
 
 	// Wait for the socket file to be created to ensure the server has started
@@ -55,10 +55,10 @@ func TestRunWSD(t *testing.T) {
 	select {
 	case err := <-errChan:
 		if err != nil {
-			t.Errorf("runWSD() returned an unexpected error: %v", err)
+			t.Errorf("runWsd() returned an unexpected error: %v", err)
 		}
 	case <-time.After(testTimeout):
-		t.Fatal("runWSD() did not shut down cleanly in time")
+		t.Fatal("runWsd() did not shut down cleanly in time")
 	}
 }
 
@@ -75,9 +75,9 @@ func TestRunWSD_InvalidSocketPath(t *testing.T) {
 
 	socketPath := filepath.Join(tmpFile.Name(), "wsd.sock")
 
-	err = runWSD(ctx, socketPath, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED, "")
+	err = runWsd(ctx, socketPath, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED, "")
 	if err == nil {
-		t.Fatal("Expected runWSD() to return an error for invalid socket path")
+		t.Fatal("Expected runWsd() to return an error for invalid socket path")
 	}
 }
 
@@ -94,7 +94,7 @@ func TestRunKPS(t *testing.T) {
 
 	errChan := make(chan error, 1)
 	go func() {
-		errChan <- runKPS(ctx, port)
+		errChan <- runKps(ctx, port)
 	}()
 
 	// Wait for the server to start by polling the port
@@ -121,10 +121,10 @@ func TestRunKPS(t *testing.T) {
 	select {
 	case err := <-errChan:
 		if err != nil {
-			t.Errorf("runKPS() returned an unexpected error: %v", err)
+			t.Errorf("runKps() returned an unexpected error: %v", err)
 		}
 	case <-time.After(testTimeout):
-		t.Fatal("runKPS() did not shut down cleanly in time")
+		t.Fatal("runKps() did not shut down cleanly in time")
 	}
 }
 
@@ -132,9 +132,9 @@ func TestRunKPS_InvalidPort(t *testing.T) {
 	ctx := context.Background()
 
 	// Use an impossible port
-	err := runKPS(ctx, -1)
+	err := runKps(ctx, -1)
 	if err == nil {
-		t.Fatal("Expected runKPS() to return an error for invalid port")
+		t.Fatal("Expected runKps() to return an error for invalid port")
 	}
 }
 

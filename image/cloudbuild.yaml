@@ -1,0 +1,203 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+substitutions:
+  "_OUTPUT_IMAGE_NAME": ""
+  "_OUTPUT_IMAGE_PROJECT": ""
+  "_BASE_IMAGE_GCS_DIR": ""
+  "_IMAGE_ENV": ""
+  "_KPS_DOCKER_IMAGE_REF": ""
+  "_OUTPUT_IMAGE_GCS_DIR": ""
+
+steps:
+  - name: "gcr.io/cloud-builders/gcloud"
+    id: "DownloadBaseImageFromGCS"
+    entrypoint: "gcloud"
+    args:
+      [
+        "storage",
+        "cp",
+        "${_BASE_IMAGE_GCS_DIR}/chromiumos_base_image_gce.tar.gz",
+        "./src_image.tar.gz",
+      ]
+  - name: "ubuntu"
+    id: "ExtractRawBaseImage"
+    args: ["tar", "-xzf", "./src_image.tar.gz"]
+  - name: "gcr.io/cloud-builders/docker"
+    id: "SaveKPSContainerImage"
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - |
+        set -e
+        docker pull ${_KPS_DOCKER_IMAGE_REF}
+        mkdir -p /workspace/kps_image
+        docker save ${_KPS_DOCKER_IMAGE_REF} -o /workspace/kps_image/image.tar
+  - name: golang:1.25-rc-bullseye
+    id: BuildAttestationService
+    env:
+      - "CGO_ENABLED=1"
+    entrypoint: /bin/bash
+    args:
+      - -c
+      - |
+        set -exuo pipefail
+        cd keymanager/attestation_service/example/server
+        go build -o ../../../../image/attestation_agent -ldflags="-X 'main.BuildCommit=${SHORT_SHA}'"
+  - name: "alpine"
+    id: "PrepareOEMInstallDir"
+    entrypoint: "sh"
+    args:
+      - -c
+      - |
+        set -eu
+        rm -rf /workspace/oem-install
+        mkdir -p /workspace/oem-install/kps
+
+        cp ./image/entrypoint.sh /workspace/oem-install/entrypoint.sh
+        cp ./image/keymanager.service /workspace/oem-install/kps/keymanager.service
+        cp ./image/attestation.service /workspace/oem-install/kps/attestation.service
+        cp ./image/attestation_agent /workspace/oem-install/kps/attestation_agent
+        cp ./image/exit_script.sh /workspace/oem-install/kps/exit_script.sh
+        cp ./image/kps_runner.sh /workspace/oem-install/kps/kps_runner.sh
+
+        if [ -f /workspace/kps_image/image.tar ]; then
+            cp /workspace/kps_image/image.tar /workspace/oem-install/kps/image.tar
+        fi
+
+        cat << EOF > /workspace/oem-install/kps/image.env
+        IMAGE_PATH="/usr/share/oem/kps/image.tar"
+        IMAGE_REF="${_KPS_DOCKER_IMAGE_REF}"
+        CONTAINER_NAME="key-management-agent"
+        EOF
+
+        chmod +x /workspace/oem-install/kps/kps_runner.sh || true
+        chmod +x /workspace/oem-install/entrypoint.sh || true
+        chmod +x /workspace/oem-install/kps/exit_script.sh || true
+        chmod +x /workspace/oem-install/kps/attestation_agent || true
+
+  - name: "gcr.io/cloud-builders/gcloud"
+    id: "DownloadVmlinux"
+    entrypoint: "gcloud"
+    args:
+      [
+        "storage",
+        "cp",
+        "gs://cos-tools/19216.220.185/cchostdebug-amd64-gcp/vmlinux",
+        "./vmlinux",
+      ]
+  - name: "gcr.io/cos-cloud/oem-preloader:latest"
+    id: "RunOEMPreloader"
+    env:
+      - "IMAGE_ENV=${_IMAGE_ENV}"
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - |
+        set -ex
+        COMMON_COMMANDS=(
+          # Disabled for cchost base image: Entrypoint is handled directly by systemd, not Cloud-Init.
+          # "s|cros_efi|cros_efi ds=nocloud;s=/usr/share/oem/|g"
+          "s|cros_efi|cros_efi cos.protected_stateful_partition=m|g"
+          "s|cros_efi|cros_efi systemd.default_timeout_start_sec=900s|g"
+          "s|cros_efi|cros_efi swiotlb=4194304,force,any|g"
+          "s|systemd.mask=usr-share-oem.mount||g"
+          "s|dm-m2d|dm-mod|g"
+          "s|,oemroot|;oemroot|g"
+        )
+
+        DEBUG_COMMANDS=(
+          "s|cros_efi|cros_efi systemd.mask=konlet-startup.service|g"
+          "s|cros_efi|cros_efi systemd.mask=update-engine.service|g"
+          "s|cros_efi|cros_efi confidential-space.hardened=false|g"
+        )
+
+        HARDENED_COMMANDS=(
+          "s|cros_efi|cros_efi systemd.wants=basic.target|g"
+          "s|cros_efi|cros_efi systemd.wants=systemd-resolved.service|g"
+          "s|cros_efi|cros_efi systemd.wants=network-online.target|g"
+          "s|cros_efi|cros_efi systemd.wants=gcr-online.target|g"
+          # Disabled because no cloud-init
+          # "s|cros_efi|cros_efi systemd.unit=cloud-final.service|g"
+          "s|cros_efi|cros_efi systemd.mask=var-lib-docker.mount|g"
+          "s|cros_efi|cros_efi systemd.mask=docker.service|g"
+          "s|cros_efi|cros_efi systemd.mask=google-guest-agent.service|g"
+          "s|cros_efi|cros_efi systemd.mask=google-osconfig-init.service|g"
+          "s|cros_efi|cros_efi systemd.mask=google-osconfig-agent.service|g"
+          "s|cros_efi|cros_efi systemd.mask=google-startup-scripts.service|g"
+          "s|cros_efi|cros_efi systemd.mask=google-shutdown-scripts.service|g"
+          "s|cros_efi|cros_efi systemd.mask=konlet-startup.service|g"
+          "s|cros_efi|cros_efi systemd.mask=crash-reporter.service|g"
+          "s|cros_efi|cros_efi systemd.mask=device_policy_manager.service|g"
+          "s|cros_efi|cros_efi systemd.mask=docker-events-collector-fluent-bit.service|g"
+          "s|cros_efi|cros_efi systemd.mask=sshd.service|g"
+          "s|cros_efi|cros_efi systemd.mask=var-lib-toolbox.mount|g"
+          "s|cros_efi|cros_efi systemd.mask=update-engine.service|g"
+          "s|cros_efi|cros_efi confidential-space.hardened=true|g"
+        )
+
+        CMD=(
+          "/oem-preloader"
+          "--vmlinux=./vmlinux"
+          "--src-image=./disk.raw"
+          "--out-image=output.bin"
+          "--oem-fs-size=500M"
+          "--disk-size-gb=16"
+          "--install-dir=/workspace/oem-install/"
+        )
+        for cmd in "$${COMMON_COMMANDS[@]}"; do
+          CMD+=(--cmdline-sed-command="$${cmd}")
+        done
+        if [[ "$${IMAGE_ENV}" == "debug" ]]; then
+          for cmd in "$${DEBUG_COMMANDS[@]}"; do
+            CMD+=(--cmdline-sed-command="$${cmd}")
+          done
+        elif [[ "$${IMAGE_ENV}" == "hardened" ]]; then
+          for cmd in "$${HARDENED_COMMANDS[@]}"; do
+            CMD+=(--cmdline-sed-command="$${cmd}")
+          done
+        fi
+
+        "$${CMD[@]}"
+  - name: "alpine"
+    id: "RenameOutputImage"
+    args: ["mv", "output.bin", "disk.raw"]
+  - name: "alpine"
+    id: "TarOutputImage"
+    args: ["tar", "-zcf", "./out_image.tar.gz", "disk.raw"]
+  - name: "gcr.io/cloud-builders/gcloud"
+    id: "UploadToGCS"
+    entrypoint: "gcloud"
+    args:
+      [
+        "storage",
+        "cp",
+        "./out_image.tar.gz",
+        "${_OUTPUT_IMAGE_GCS_DIR}/${_OUTPUT_IMAGE_NAME}.tar.gz",
+      ]
+  - name: "gcr.io/cloud-builders/gcloud"
+    id: "CreateGCEImage"
+    entrypoint: "gcloud"
+    args:
+      [
+        "compute",
+        "images",
+        "create",
+        "${_OUTPUT_IMAGE_NAME}",
+        "--source-uri",
+        "${_OUTPUT_IMAGE_GCS_DIR}/${_OUTPUT_IMAGE_NAME}.tar.gz",
+        "--project",
+        "${_OUTPUT_IMAGE_PROJECT}",
+        "--guest-os-features=GVNIC,IDPF,VIRTIO_SCSI_MULTIQUEUE,UEFI_COMPATIBLE,TDX_CAPABLE,SEV_CAPABLE,SEV_LIVE_MIGRATABLE_V2,SEV_SNP_CAPABLE,SEV_LIVE_MIGRATABLE",
+      ]

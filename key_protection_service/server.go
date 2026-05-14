@@ -6,7 +6,7 @@ import (
 	"net"
 	"time"
 
-	kpspb "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/proto"
+	kpsapi "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/proto"
 	claimserver "github.com/GoogleCloudPlatform/key-protection-module/km_common/claimserver"
 	keymanager "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto"
 	"github.com/google/uuid"
@@ -28,6 +28,7 @@ type Server struct {
 	keyClaimServer   *grpc.Server
 	keyClaimListener net.Listener
 	kps              KeyProtectionService
+	bootToken        string
 }
 
 // GetKeyClaims implements claimserver.KeyClaimProvider for KEM keys.
@@ -91,12 +92,14 @@ func newServerWithPort(port int, keyClaimPort int, kps KeyProtectionService) (*S
 		grpc.UnaryInterceptor(ValidationInterceptor),
 	)
 
-	kpspb.RegisterKeyProtectionServiceServer(grpcServer, NewGrpcServer(kps))
+	bootToken := uuid.New().String()
+	kpsapi.RegisterKeyProtectionServiceServer(grpcServer, NewGrpcServer(kps, bootToken))
 
 	s := &Server{
 		grpcServer: grpcServer,
 		listener:   ln,
 		kps:        kps,
+		bootToken:  bootToken,
 	}
 
 	keyClaimServer, keyClaimLis, err := claimserver.Start(s, keyClaimPort)
