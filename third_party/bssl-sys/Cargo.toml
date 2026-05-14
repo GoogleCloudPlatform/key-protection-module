@@ -12,6 +12,9 @@ links = "bssl"
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(bindgen_rs_file)'] }
 
+[lints.clippy]
+all = "allow"
+
 [lib]
 path = "../../boringssl/rust/bssl-sys/src/lib.rs"
 

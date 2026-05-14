@@ -27,12 +27,12 @@ message GetKeyClaimsRequest {
 
 message KemPublicKey {
   KemAlgorithm algorithm = 1;
-  bytes public_key = 2;  // `Npk` bytes long; see the KemAlgorithm definition.
+  bytes public_key = 2; // `Npk` bytes long; see the KemAlgorithm definition.
 }
 
 message HpkePublicKey {
   HpkeAlgorithm algorithm = 1;
-  bytes public_key = 2;  // `Npk` bytes long. Raw bytes.
+  bytes public_key = 2; // `Npk` bytes long. Raw bytes.
 }
 
 message KeyClaims {

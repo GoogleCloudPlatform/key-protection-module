@@ -41,6 +41,10 @@ func (r *realWorkloadService) GetBindingKey(id uuid.UUID) ([]byte, *keymanager.H
 	return wskcc.GetBindingKey(id)
 }
 
+func (r *realWorkloadService) DestroyAllKeys() error {
+	return wskcc.DestroyAllKeys()
+}
+
 func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
 	// Wire up real FFI calls: WSD KCC for binding, KPS KCC (via KPS KOL) for KEM.
 	kpsSvc := kps.NewService()

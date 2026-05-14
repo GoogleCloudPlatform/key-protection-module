@@ -2,9 +2,9 @@ syntax = "proto3";
 
 package keymanager;
 
-option go_package = "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto;keymanager";
-
 import "km_common/proto/algorithms.proto";
+
+option go_package = "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto;keymanager";
 
 // Used to refer to key instances held by the service.
 message KeyHandle {

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "supported_algorithms": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "algorithm": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["kem"]
+              },
+              "params": {
+                "type": "object",
+                "properties": {
+                  "kem_id": {
+                    "type": "string",
+                    "enum": ["KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256"]
+                  }
+                },
+                "required": ["kem_id"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["type", "params"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["algorithm"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["supported_algorithms"],
+  "additionalProperties": false
+}
