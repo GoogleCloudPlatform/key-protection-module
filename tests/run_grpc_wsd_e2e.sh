@@ -46,7 +46,7 @@ AGENT_PID=$!
 cleanup() {
     echo "Cleaning up WSD agent (pid=$AGENT_PID)..."
     kill "$AGENT_PID" 2>/dev/null || true
-    wait "$AGENT_PID" 2>/dev/null || true
+    timeout 5s wait "$AGENT_PID" 2>/dev/null || kill -9 "$AGENT_PID" 2>/dev/null || true
     rm -f "$SOCKET_PATH"
     echo "--- Agent log ---"
     cat "$AGENT_LOG" || true
