@@ -43,6 +43,8 @@ const (
 	heartbeatTimeout      = 5 * time.Second
 	defaultInitialBackoff = 1 * time.Second
 	defaultMaxBackoff     = 128 * time.Second
+	// math.MaxInt64 nanoseconds is approx 292 years or 9223372036 seconds.
+	maxDurationSeconds = math.MaxInt64 / int64(time.Second)
 )
 
 // WorkloadService defines the interface for generating and managing binding keypairs.
@@ -109,7 +111,7 @@ type keyProtectionService struct{}
 // KeyProtectionService defines the interface for generating KEM keypairs.
 type KeyProtectionService interface {
 	GenerateKEMKeypair(ctx context.Context, algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
-	EnumerateKEMKeys(ctx context.Context, limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error)
+	EnumerateKEMKeys(ctx context.Context, limit, offset int32) ([]kpskcc.KEMKeyInfo, bool, error)
 	DestroyKEMKey(ctx context.Context, kemUUID uuid.UUID) error
 	GetKEMKey(ctx context.Context, id uuid.UUID) (kemPubKey []byte, bindingPubKey []byte, algo *keymanager.HpkeAlgorithm, deleteAfter uint64, err error)
 	DecapAndSeal(ctx context.Context, kemUUID uuid.UUID, encapsulatedKey, aad []byte) (sealEnc []byte, sealedCT []byte, err error)
@@ -151,7 +153,7 @@ func (r *keyProtectionService) GenerateKEMKeypair(_ context.Context, algo *keyma
 	return kpskcc.GenerateKEMKeypair(algo, bindingPubKey, lifespanSecs)
 }
 
-func (r *keyProtectionService) EnumerateKEMKeys(_ context.Context, limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
+func (r *keyProtectionService) EnumerateKEMKeys(_ context.Context, limit, offset int32) ([]kpskcc.KEMKeyInfo, bool, error) {
 	return kpskcc.EnumerateKEMKeys(limit, offset)
 }
 
@@ -231,10 +233,10 @@ func (r *remoteKeyProtectionService) GenerateKEMKeypair(ctx context.Context, alg
 	return id, resp.GetKemPubKey().GetPublicKey(), nil
 }
 
-func (r *remoteKeyProtectionService) EnumerateKEMKeys(ctx context.Context, limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
+func (r *remoteKeyProtectionService) EnumerateKEMKeys(ctx context.Context, limit, offset int32) ([]kpskcc.KEMKeyInfo, bool, error) {
 	req := &kpspb.EnumerateKEMKeysRequest{
-		Limit:  int32(limit),
-		Offset: int32(offset),
+		Limit:  limit,
+		Offset: offset,
 	}
 	ctx, cancel := context.WithTimeout(ctx, RPCTimeout)
 	defer cancel()
@@ -336,6 +338,7 @@ type Server struct {
 	heartbeatCancel context.CancelFunc
 	initialBackoff  time.Duration
 	maxBackoff      time.Duration
+	mechanism       keymanager.KeyProtectionMechanism
 	// todo: add logging mechanism here
 }
 
@@ -393,6 +396,7 @@ func New(_ context.Context, socketPath string, mode keymanager.KeyProtectionMech
 		return nil, err
 	}
 	s.conn = conn
+	s.mechanism = mode
 	return s, nil
 }
 
@@ -406,6 +410,7 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 		claimsChan:           make(chan *ClaimsCall, 4),
 		initialBackoff:       defaultInitialBackoff,
 		maxBackoff:           defaultMaxBackoff,
+		mechanism:            keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED,
 	}
 
 	mux := http.NewServeMux()
@@ -457,6 +462,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 			errs = append(errs, err)
 		}
 	}
+	close(s.claimsChan)
 	return errors.Join(errs...)
 }
 
@@ -623,7 +629,7 @@ func (s *Server) generateKEMKey(w http.ResponseWriter, r *http.Request, req *api
 			},
 			PublicKey: kemPubKey,
 		},
-		KeyProtectionMechanism: keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String(),
+		KeyProtectionMechanism: s.mechanism.String(),
 		ExpirationTime:         float64(time.Now().Unix()) + float64(req.Lifespan),
 	}
 	writeJSON(w, &resp, http.StatusOK)
@@ -679,7 +685,7 @@ func (s *Server) handleEnumerateKeys(w http.ResponseWriter, r *http.Request) {
 				},
 				PublicKey: key.KEMPubKey,
 			},
-			KeyProtectionMechanism: keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String(),
+			KeyProtectionMechanism: s.mechanism.String(),
 			ExpirationTime:         float64(time.Now().Unix()) + float64(key.RemainingLifespanSecs),
 		})
 	}
@@ -818,7 +824,7 @@ func (s *Server) handleGetKEMKeyClaims(ctx context.Context, id uuid.UUID) (*keym
 
 	// Calculate remaining time.
 	var remaining time.Duration
-	if remainingLifespanSecs > 9223372036 { // Max seconds for time.Duration (~292 years)
+	if remainingLifespanSecs > uint64(maxDurationSeconds) {
 		remaining = time.Duration(math.MaxInt64)
 	} else {
 		remaining = time.Duration(remainingLifespanSecs) * time.Second

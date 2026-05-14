@@ -33,10 +33,9 @@ fuzz_target!(|data: &[u8]| {
     let aad = &rest[enc_len..enc_len + aad_len];
 
     // Initialize a valid KEM key once
-    static INIT: std::sync::Once = std::sync::Once::new();
-    static mut VALID_UUID: [u8; 16] = [0; 16];
+    static VALID_UUID: std::sync::OnceLock<Option<[u8; 16]>> = std::sync::OnceLock::new();
 
-    INIT.call_once(|| {
+    let uuid_opt = VALID_UUID.get_or_init(|| {
         let algo = km_common::proto::HpkeAlgorithm {
             kem: km_common::proto::KemAlgorithm::DhkemX25519HkdfSha256 as i32,
             kdf: km_common::proto::KdfAlgorithm::HkdfSha256 as i32,
@@ -61,15 +60,16 @@ fuzz_target!(|data: &[u8]| {
                 pubkey_len,
             );
             if status == km_common::proto::Status::Success {
-                VALID_UUID = uuid;
+                Some(uuid)
+            } else {
+                None
             }
         }
     });
 
-    let uuid = unsafe { VALID_UUID };
-    if uuid == [0; 16] {
+    let Some(uuid) = uuid_opt else {
         return; // Setup failed
-    }
+    };
 
     // Call decap_and_seal.
     // Output buffers must have EXACT expected lengths:

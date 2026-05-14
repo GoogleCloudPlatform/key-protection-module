@@ -16,6 +16,7 @@ package workloadservice
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -42,8 +43,7 @@ func FuzzHandleGenerateKey(f *testing.F) {
 		if err != nil {
 			t.Fatalf("failed to create server: %v", err)
 		}
-		defer func() { _ = srv.listener.Close() }()
-		defer close(srv.claimsChan)
+		defer func() { _ = srv.Shutdown(context.Background()) }()
 
 		req := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_key", bytes.NewReader(data))
 		req.Header.Set("Content-Type", "application/json")
@@ -64,8 +64,7 @@ func FuzzHandleDecaps(f *testing.F) {
 		if err != nil {
 			t.Fatalf("failed to create server: %v", err)
 		}
-		defer func() { _ = srv.listener.Close() }()
-		defer close(srv.claimsChan)
+		defer func() { _ = srv.Shutdown(context.Background()) }()
 
 		// Pre-generate a key to make the environment stateful.
 		// This populates the global Rust registry and the Go mapping.

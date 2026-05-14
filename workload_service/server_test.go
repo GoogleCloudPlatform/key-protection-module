@@ -35,8 +35,7 @@ func newTestServer(t *testing.T, kemGen kps.KeyProtectionService, bindingGen Wor
 		t.Fatalf("failed to create test server: %v", err)
 	}
 	t.Cleanup(func() {
-		_ = srv.listener.Close()
-		close(srv.claimsChan)
+		_ = srv.Shutdown(context.Background())
 	})
 	return srv
 }
@@ -108,7 +107,7 @@ func (m *mockKeyProtectionService) GenerateKEMKeypair(_ context.Context, _ *keym
 	return m.uuid, m.pubKey, m.err
 }
 
-func (m *mockKeyProtectionService) EnumerateKEMKeys(_ context.Context, _, _ int) ([]kpskcc.KEMKeyInfo, bool, error) {
+func (m *mockKeyProtectionService) EnumerateKEMKeys(_ context.Context, _, _ int32) ([]kpskcc.KEMKeyInfo, bool, error) {
 	return m.enumeratedKeys, false, m.enumerateErr
 }
 

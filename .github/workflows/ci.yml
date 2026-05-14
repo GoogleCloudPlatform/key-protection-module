@@ -20,6 +20,10 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]
 
+env:
+  RUST_COVERAGE_THRESHOLD: 85
+  GO_COVERAGE_THRESHOLD: 75
+
 permissions:
   contents: read
   pull-requests: read
@@ -97,7 +101,7 @@ jobs:
       - name: Build and Test Rust with Coverage
         if: matrix.os == 'ubuntu-latest' && matrix.arch == 'amd64'
         run: |
-          cargo llvm-cov --all-features --workspace --fail-under-lines 85
+          cargo llvm-cov --all-features --workspace --fail-under-lines ${{ env.RUST_COVERAGE_THRESHOLD }}
           # Rebuild WSD/KPS staticlibs without coverage instrumentation so Go/CGO can link them safely
           cargo build --workspace
 
@@ -107,6 +111,7 @@ jobs:
           GOARCH: ${{ matrix.arch }}
           CGO_ENABLED: ${{ (matrix.os == 'ubuntu-latest' && matrix.arch == 'amd64') && '1' || '0' }}
         run: |
+          set -euo pipefail
           go build -v ./...
           if [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "amd64" ]; then
             # Full test suite on primary platform
@@ -115,11 +120,24 @@ jobs:
             
             # Verify coverage threshold
             echo "Checking coverage..."
-            COVERAGE=$(go tool cover -func=coverage.txt | grep total | awk '{print $3}' | sed 's/%//')
+            if [ ! -f coverage.txt ] || [ ! -s coverage.txt ]; then
+              echo "Error: coverage.txt is missing or empty"
+              exit 1
+            fi
+            COVERAGE_LINE=$(go tool cover -func=coverage.txt | grep total || true)
+            if [ -z "$COVERAGE_LINE" ]; then
+              echo "Error: Could not find total coverage line in report"
+              exit 1
+            fi
+            COVERAGE=$(echo "$COVERAGE_LINE" | awk '{print $3}' | sed 's/%//')
             echo "Total coverage: $COVERAGE%"
-            THRESHOLD=75
+            THRESHOLD=${{ env.GO_COVERAGE_THRESHOLD }}
             COVERAGE_INT=${COVERAGE%.*}
-            if [ -n "$COVERAGE_INT" ] && [ "$COVERAGE_INT" -lt "$THRESHOLD" ]; then
+            if [ -z "$COVERAGE_INT" ]; then
+              echo "Error: Failed to parse coverage integer"
+              exit 1
+            fi
+            if [ "$COVERAGE_INT" -lt "$THRESHOLD" ]; then
               echo "Coverage $COVERAGE% is below threshold $THRESHOLD%"
               exit 1
             fi
@@ -136,17 +154,31 @@ jobs:
       - name: Build and Test Go (Attestation Service)
         if: matrix.os == 'ubuntu-latest'
         run: |
+          set -euo pipefail
           cd keymanager/attestation_service
           go build -v ./...
           # Run unit tests with coverage and enforce 80% threshold (only runs on primary Linux matrix)
           go test -v -race -coverprofile=coverage.txt -covermode=atomic ./
           
           echo "Checking coverage for Attestation Service..."
-          COVERAGE=$(go tool cover -func=coverage.txt | grep total | awk '{print $3}' | sed 's/%//')
+          if [ ! -f coverage.txt ] || [ ! -s coverage.txt ]; then
+            echo "Error: coverage.txt is missing or empty"
+            exit 1
+          fi
+          COVERAGE_LINE=$(go tool cover -func=coverage.txt | grep total || true)
+          if [ -z "$COVERAGE_LINE" ]; then
+            echo "Error: Could not find total coverage line in report"
+            exit 1
+          fi
+          COVERAGE=$(echo "$COVERAGE_LINE" | awk '{print $3}' | sed 's/%//')
           echo "Total coverage: $COVERAGE%"
-          THRESHOLD=75
+          THRESHOLD=${{ env.GO_COVERAGE_THRESHOLD }}
           COVERAGE_INT=${COVERAGE%.*}
-          if [ -n "$COVERAGE_INT" ] && [ "$COVERAGE_INT" -lt "$THRESHOLD" ]; then
+          if [ -z "$COVERAGE_INT" ]; then
+            echo "Error: Failed to parse coverage integer"
+            exit 1
+          fi
+          if [ "$COVERAGE_INT" -lt "$THRESHOLD" ]; then
             echo "Coverage $COVERAGE% is below threshold $THRESHOLD%"
             exit 1
           fi
@@ -269,8 +301,16 @@ jobs:
     name: Cargo Audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Cargo Audit
-        uses: rustsec/audit-check@69366f33c96575abad1ee0dba8212993eecbe998 # v2.0.0
+      - uses: actions-rust-lang/audit@72c09e02f132669d52284a3323acdb503cfc1a24 #v1.2.7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Audit WSD Fuzz
+        uses: actions-rust-lang/audit@72c09e02f132669d52284a3323acdb503cfc1a24 #v1.2.7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          workingDirectory: workload_service/key_custody_core/fuzz
+      - name: Audit KPS Fuzz
+        uses: actions-rust-lang/audit@72c09e02f132669d52284a3323acdb503cfc1a24 #v1.2.7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          workingDirectory: key_protection_service/key_custody_core/fuzz
