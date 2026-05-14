@@ -86,7 +86,7 @@ steps:
 
   # Monitor tests and cleanup
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    id: MonitorVMTests
+    id: MonitorEmulatedVMProtectionTests
     waitFor: ['CreateTestVM']
     entrypoint: 'bash'
     args:
@@ -152,7 +152,7 @@ steps:
 
   # Monitor gRPC API tests and cleanup both VMs
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    id: MonitorGrpcApiTests
+    id: MonitorVMProtectionTests
     waitFor: ['CreateGrpcApiTestVM']
     entrypoint: 'bash'
     args:
@@ -203,7 +203,7 @@ steps:
   # Final validation: Containerized socket check for the production image
   - name: 'gcr.io/cloud-builders/docker'
     id: FinalSocketCheck
-    waitFor: ['MonitorVMTests', 'MonitorSchemaVMTests', 'MonitorGrpcApiTests']
+    waitFor: ['MonitorEmulatedVMProtectionTests', 'MonitorSchemaVMTests', 'MonitorVMProtectionTests']
 
     entrypoint: 'bash'
     args:
