@@ -239,7 +239,7 @@ func TestEnumerateKEMKeys(t *testing.T) {
 	tests := []struct {
 		name               string
 		req                *kpspb.EnumerateKEMKeysRequest
-		enumerateKEMKeysFn func(ctx context.Context, limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error)
+		enumerateKEMKeysFn func(ctx context.Context, limit, offset int32) ([]kpskcc.KEMKeyInfo, bool, error)
 		wantCode           codes.Code
 		wantHasMore        bool
 		wantCount          int
@@ -251,7 +251,7 @@ func TestEnumerateKEMKeys(t *testing.T) {
 				Limit:  10,
 				Offset: 0,
 			},
-			enumerateKEMKeysFn: func(_ context.Context, _, _ int) ([]kpskcc.KEMKeyInfo, bool, error) {
+			enumerateKEMKeysFn: func(_ context.Context, _, _ int32) ([]kpskcc.KEMKeyInfo, bool, error) {
 				return []kpskcc.KEMKeyInfo{
 					{
 						ID:                    id,
@@ -272,7 +272,7 @@ func TestEnumerateKEMKeys(t *testing.T) {
 				Limit:  10,
 				Offset: 0,
 			},
-			enumerateKEMKeysFn: func(_ context.Context, _, _ int) ([]kpskcc.KEMKeyInfo, bool, error) {
+			enumerateKEMKeysFn: func(_ context.Context, _, _ int32) ([]kpskcc.KEMKeyInfo, bool, error) {
 				return nil, false, keymanager.Status_STATUS_PERMISSION_DENIED.ToStatus()
 			},
 			wantCode: codes.PermissionDenied,
