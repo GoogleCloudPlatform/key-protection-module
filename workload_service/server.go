@@ -27,6 +27,7 @@ import (
 
 	kpskcc "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/key_custody_core"
 	kpspb "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/proto"
+	claimserver "github.com/GoogleCloudPlatform/key-protection-module/km_common/claimserver"
 	keymanager "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto"
 	wskcc "github.com/GoogleCloudPlatform/key-protection-module/workload_service/key_custody_core"
 	"google.golang.org/grpc"
@@ -233,7 +234,7 @@ func (r *remoteKeyProtectionService) EnumerateKEMKeys(ctx context.Context, limit
 			ID:                    id,
 			Algorithm:             k.GetAlgorithm(),
 			KEMPubKey:             k.GetKemPubKey(),
-			RemainingLifespanSecs: k.GetRemainingLifespanSecs(),
+			RemainingLifespanSecs: k.RemainingLifespanSecs,
 		})
 	}
 	return keys, resp.GetHasMore(), nil
@@ -285,6 +286,7 @@ type Server struct {
 	workloadService      WorkloadService
 	mu                   sync.RWMutex
 	kemToBindingMap      map[uuid.UUID]uuid.UUID
+	mode                 keymanager.KeyProtectionMechanism
 
 	httpServer       *http.Server
 	listener         net.Listener
@@ -301,8 +303,12 @@ var (
 	KeyClaimPort = 50051
 )
 
-// New creates a new WSD Server listening on the given unix socket path.
-func New(_ context.Context, socketPath string, mode keymanager.KeyProtectionMechanism, kpsVMIP string) (*Server, error) {
+// New creates a new WSD Server listening on the given unix socket path, with an optional key claim port (default 50051).
+func New(_ context.Context, socketPath string, mode keymanager.KeyProtectionMechanism, kpsVMIP string, keyClaimPort ...int) (*Server, error) {
+	kcPort := KeyClaimPort
+	if len(keyClaimPort) > 0 {
+		kcPort = keyClaimPort[0]
+	}
 	var kps KeyProtectionService
 	var conn *grpc.ClientConn
 	switch mode {
@@ -333,7 +339,7 @@ func New(_ context.Context, socketPath string, mode keymanager.KeyProtectionMech
 	default:
 		return nil, fmt.Errorf("unknown key protection mechanism provided: %v", mode)
 	}
-	s, err := newServerWithPort(kps, &workloadService{}, socketPath, KeyClaimPort)
+	s, err := newServerWithPort(kps, &workloadService{}, socketPath, kcPort, mode)
 	if err != nil {
 		if conn != nil {
 			_ = conn.Close()
@@ -344,17 +350,18 @@ func New(_ context.Context, socketPath string, mode keymanager.KeyProtectionMech
 	return s, nil
 }
 
-// NewServer creates a new WSD server with the given dependencies for testing (dynamic port 0).
-func NewServer(keyProtectionService KeyProtectionService, workloadService WorkloadService, socketPath string) (*Server, error) {
-	return newServerWithPort(keyProtectionService, workloadService, socketPath, 0)
+// NewServer creates a new WSD server with the given dependencies.
+func NewServer(keyProtectionService KeyProtectionService, workloadService WorkloadService, socketPath string, keyClaimPort int, mode keymanager.KeyProtectionMechanism) (*Server, error) {
+	return newServerWithPort(keyProtectionService, workloadService, socketPath, keyClaimPort, mode)
 }
 
-func newServerWithPort(keyProtectionService KeyProtectionService, workloadService WorkloadService, socketPath string, keyClaimPort int) (*Server, error) {
+func newServerWithPort(keyProtectionService KeyProtectionService, workloadService WorkloadService, socketPath string, keyClaimPort int, mode keymanager.KeyProtectionMechanism) (*Server, error) {
 	s := &Server{
 		keyProtectionService: keyProtectionService,
 		workloadService:      workloadService,
 		kemToBindingMap:      make(map[uuid.UUID]uuid.UUID),
 		mu:                   sync.RWMutex{},
+		mode:                 mode,
 	}
 
 	mux := http.NewServeMux()
@@ -372,7 +379,7 @@ func newServerWithPort(keyProtectionService KeyProtectionService, workloadServic
 	}
 	s.listener = ln
 
-	grpcSrv, grpcLis, err := StartKeyClaimsGRPCServer(s, keyClaimPort)
+	grpcSrv, grpcLis, err := claimserver.Start(s, keyClaimPort)
 	if err != nil {
 		_ = ln.Close()
 		return nil, fmt.Errorf("failed to start gRPC server: %w", err)
@@ -784,8 +791,8 @@ func (s *Server) handleGetKEMKeyClaims(ctx context.Context, id uuid.UUID) (*keym
 	return claims, nil
 }
 
-// handleGetClaims processes a single GetKeyClaimsRequest and returns the result.
-func (s *Server) handleGetClaims(ctx context.Context, req *keymanager.GetKeyClaimsRequest) (*keymanager.KeyClaims, error) {
+// GetKeyClaims processes a single GetKeyClaimsRequest and returns the result.
+func (s *Server) GetKeyClaims(ctx context.Context, req *keymanager.GetKeyClaimsRequest) (*keymanager.KeyClaims, error) {
 	keyHandle := req.GetKeyHandle().GetHandle()
 	keyType := req.GetKeyType()
 
@@ -803,6 +810,9 @@ func (s *Server) handleGetClaims(ctx context.Context, req *keymanager.GetKeyClai
 		}
 
 	case keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY:
+		if s.mode == keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM {
+			return nil, status.Errorf(codes.InvalidArgument, "KEM key claims must be retrieved directly from the KPS VM in KEY_PROTECTION_VM mode")
+		}
 		claims, err = s.handleGetKEMKeyClaims(ctx, id)
 		if err != nil {
 			return nil, fmt.Errorf("failed to retrieve VM protection key claims: %w", err)

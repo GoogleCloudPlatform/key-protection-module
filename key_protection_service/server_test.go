@@ -13,7 +13,7 @@ import (
 
 func TestServerRunAndShutdown(t *testing.T) {
 	// Let the OS pick an available port
-	srv, err := newServerWithKPS(0, NewService())
+	srv, err := newServerWithKPS(0, 0, NewService())
 	if err != nil {
 		t.Fatalf("Failed to create KPS server: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestServerInvalidPort(t *testing.T) {
 func TestServerGRPCRegistration(t *testing.T) {
 	mock := &mockKPS{}
 
-	srv, err := newServerWithKPS(0, mock)
+	srv, err := newServerWithKPS(0, 0, mock)
 	if err != nil {
 		t.Fatalf("failed to create KPS server: %v", err)
 	}

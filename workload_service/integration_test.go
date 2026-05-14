@@ -12,10 +12,11 @@ import (
 	"time"
 
 	"context"
+
 	api "github.com/GoogleCloudPlatform/key-protection-module/workload_service/proto"
 	"github.com/google/uuid"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	kps "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service"
 	keymanager "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto"
@@ -46,7 +47,7 @@ func (r *realWorkloadService) GetBindingKey(id uuid.UUID) ([]byte, *keymanager.H
 func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
 	// Wire up real FFI calls: WSD KCC for binding, KPS KCC (via KPS KOL) for KEM.
 	kpsSvc := kps.NewService()
-	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "test.sock")
+	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "test.sock", 0, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -95,7 +96,7 @@ func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
 
 func TestIntegrationGenerateKeysUniqueMappings(t *testing.T) {
 	kpsSvc := kps.NewService()
-	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "test.sock")
+	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "test.sock", 0, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -149,7 +150,7 @@ func TestIntegrationGenerateKeysUniqueMappings(t *testing.T) {
 
 func TestIntegrationDestroyKey(t *testing.T) {
 	kpsSvc := kps.NewService()
-	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "")
+	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "", 0, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -218,7 +219,7 @@ func TestIntegrationDestroyKey(t *testing.T) {
 
 func TestIntegrationAutoDestroy(t *testing.T) {
 	kpsSvc := kps.NewService()
-	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "test.sock")
+	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "test.sock", 0, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -262,7 +263,7 @@ func TestIntegrationAutoDestroy(t *testing.T) {
 
 func TestIntegrationKeyClaims(t *testing.T) {
 	kpsSvc := kps.NewService()
-	srv, err := NewServer(kpsSvc, &realWorkloadService{}, filepath.Join(t.TempDir(), "test.sock"))
+	srv, err := NewServer(kpsSvc, &realWorkloadService{}, filepath.Join(t.TempDir(), "test.sock"), 0, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -293,7 +294,7 @@ func TestIntegrationKeyClaims(t *testing.T) {
 			KeyHandle: &keymanager.KeyHandle{Handle: kemHandle},
 			KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
 		}
-		res, err := srv.handleGetClaims(context.Background(), req)
+		res, err := srv.GetKeyClaims(context.Background(), req)
 		if err != nil {
 			t.Fatalf("unexpected error for KEM claims: %v", err)
 		}
@@ -315,7 +316,7 @@ func TestIntegrationKeyClaims(t *testing.T) {
 			KeyHandle: &keymanager.KeyHandle{Handle: kemHandle},
 			KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
 		}
-		res, err := srv.handleGetClaims(context.Background(), req)
+		res, err := srv.GetKeyClaims(context.Background(), req)
 		if err != nil {
 			t.Fatalf("unexpected error for binding claims: %v", err)
 		}
@@ -330,7 +331,7 @@ func TestIntegrationKeyClaims(t *testing.T) {
 			KeyHandle: &keymanager.KeyHandle{Handle: uuid.New().String()},
 			KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
 		}
-		_, err := srv.handleGetClaims(context.Background(), req)
+		_, err := srv.GetKeyClaims(context.Background(), req)
 		if err == nil {
 			t.Fatal("expected error for non-existent key")
 		}
@@ -341,7 +342,7 @@ func TestIntegrationKeyClaims(t *testing.T) {
 			KeyHandle: &keymanager.KeyHandle{Handle: kemHandle},
 			KeyType:   keymanager.KeyType_KEY_TYPE_UNSPECIFIED,
 		}
-		_, err := srv.handleGetClaims(context.Background(), req)
+		_, err := srv.GetKeyClaims(context.Background(), req)
 		if err == nil {
 			t.Fatal("expected error for unsupported key type")
 		}
@@ -350,7 +351,7 @@ func TestIntegrationKeyClaims(t *testing.T) {
 
 func TestIntegrationKeyClaimsGRPC(t *testing.T) {
 	kpsSvc := kps.NewService()
-	srv, err := NewServer(kpsSvc, &realWorkloadService{}, filepath.Join(t.TempDir(), "test.sock"))
+	srv, err := NewServer(kpsSvc, &realWorkloadService{}, filepath.Join(t.TempDir(), "test.sock"), 0, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}

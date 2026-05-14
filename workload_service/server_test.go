@@ -27,7 +27,7 @@ import (
 )
 
 func newTestServer(t *testing.T, kemGen kps.KeyProtectionService, bindingGen WorkloadService) *Server {
-	srv, err := NewServer(kemGen, bindingGen, filepath.Join(t.TempDir(), "test.sock"))
+	srv, err := NewServer(kemGen, bindingGen, filepath.Join(t.TempDir(), "test.sock"), 0, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
 	if err != nil {
 		t.Fatalf("failed to create test server: %v", err)
 	}
@@ -824,7 +824,7 @@ func TestHandleGetClaims(t *testing.T) {
 			KeyHandle: &keymanager.KeyHandle{Handle: kemUUID.String()},
 			KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
 		}
-		res, err := srv.handleGetClaims(context.Background(), req)
+		res, err := srv.GetKeyClaims(context.Background(), req)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -847,7 +847,7 @@ func TestHandleGetClaims(t *testing.T) {
 			KeyHandle: &keymanager.KeyHandle{Handle: kemUUID.String()},
 			KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
 		}
-		res, err := srv.handleGetClaims(context.Background(), req)
+		res, err := srv.GetKeyClaims(context.Background(), req)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -882,7 +882,7 @@ func TestHandleGetClaims(t *testing.T) {
 			KeyHandle: &keymanager.KeyHandle{Handle: "invalid-uuid"},
 			KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
 		}
-		_, err := srv.handleGetClaims(context.Background(), req)
+		_, err := srv.GetKeyClaims(context.Background(), req)
 		if err == nil {
 			t.Fatal("expected error for invalid UUID")
 		}
@@ -893,7 +893,7 @@ func TestHandleGetClaims(t *testing.T) {
 			KeyHandle: &keymanager.KeyHandle{Handle: bindingUUID.String()},
 			KeyType:   keymanager.KeyType_KEY_TYPE_UNSPECIFIED,
 		}
-		_, err := srv.handleGetClaims(context.Background(), req)
+		_, err := srv.GetKeyClaims(context.Background(), req)
 		if err == nil {
 			t.Fatal("expected error for unsupported key type")
 		}
@@ -912,7 +912,7 @@ func TestHandleGetClaims(t *testing.T) {
 		wsErr := &mockWorkloadService{err: fmt.Errorf("not found")}
 		srvErr := newTestServer(t, kps, wsErr)
 
-		_, err := srvErr.handleGetClaims(context.Background(), req)
+		_, err := srvErr.GetKeyClaims(context.Background(), req)
 		if err == nil {
 			t.Fatal("expected error for binding key not found")
 		}
@@ -930,7 +930,7 @@ func TestHandleGetClaims(t *testing.T) {
 		kpsErr := &mockKeyProtectionService{err: fmt.Errorf("not found")}
 		srvErr := newTestServer(t, kpsErr, ws)
 
-		_, err := srvErr.handleGetClaims(context.Background(), req)
+		_, err := srvErr.GetKeyClaims(context.Background(), req)
 		if err == nil {
 			t.Fatal("expected error for KEM key not found")
 		}
