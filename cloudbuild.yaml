@@ -159,13 +159,13 @@ steps:
       - '-c'
       - |
         KPS_VM="kpm-grpc-api-kps-${BUILD_ID}"
-        TEST_VM="kpm-grpc-api-test-${BUILD_ID}"
+        WSD_VM="kpm-grpc-api-test-${BUILD_ID}"
         ZONE="${_ZONE}"
 
         # Ensure cleanup on exit
-        trap 'echo "Cleaning up VMs..."; gcloud compute instances delete "$${KPS_VM}" "$${TEST_VM}" --zone="$${ZONE}" --quiet || true' EXIT
+        trap 'echo "Cleaning up VMs..."; gcloud compute instances delete "$${KPS_VM}" "$${WSD_VM}" --zone="$${ZONE}" --quiet || true' EXIT
 
-        ./scripts/vm-test-monitor.sh "$${TEST_VM}" "$${ZONE}"
+        ./scripts/vm-test-monitor.sh "$${WSD_VM}" "$${ZONE}"
 
   # Create a GCE VM for schema contract tests (reusing the test image with custom command)
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
