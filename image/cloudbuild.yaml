@@ -71,6 +71,7 @@ steps:
         cp ./image/attestation_agent /workspace/oem-install/kps/attestation_agent
         cp ./image/exit_script.sh /workspace/oem-install/kps/exit_script.sh
         cp ./image/kps_runner.sh /workspace/oem-install/kps/kps_runner.sh
+        cp ./image/network_setup.sh /workspace/oem-install/kps/network_setup.sh
 
         if [ -f /workspace/kps_image/image.tar ]; then
             cp /workspace/kps_image/image.tar /workspace/oem-install/kps/image.tar
@@ -86,6 +87,7 @@ steps:
         chmod +x /workspace/oem-install/entrypoint.sh || true
         chmod +x /workspace/oem-install/kps/exit_script.sh || true
         chmod +x /workspace/oem-install/kps/attestation_agent || true
+        chmod +x /workspace/oem-install/kps/network_setup.sh || true
 
   - name: "gcr.io/cloud-builders/gcloud"
     id: "DownloadVmlinux"

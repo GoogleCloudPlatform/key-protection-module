@@ -24,6 +24,12 @@ main() {
   mkdir /tmp/container_launcher
   chmod +rw /tmp/container_launcher
 
+  # Configure static IP for tap device using systemd-networkd.
+  if [[ -f /usr/share/oem/kps/network_setup.sh ]]; then
+    /usr/share/oem/kps/network_setup.sh
+    systemctl restart systemd-networkd
+  fi
+
   systemctl daemon-reload
   systemctl enable keymanager.service
   systemctl enable attestation.service
