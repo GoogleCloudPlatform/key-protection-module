@@ -94,3 +94,42 @@ func TestServerGRPCRegistration(t *testing.T) {
 		t.Fatalf("gRPC call failed: %v", err)
 	}
 }
+
+func TestServerHeartbeat(t *testing.T) {
+	mock := &mockKPS{}
+
+	srv, err := newServerWithKPS(0, mock)
+	if err != nil {
+		t.Fatalf("failed to create KPS server: %v", err)
+	}
+
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- srv.Serve()
+	}()
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(ctx)
+	}()
+
+	// Allow server to start up
+	time.Sleep(100 * time.Millisecond)
+
+	addr := srv.listener.Addr().String()
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("failed to dial grpc server: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	client := kpspb.NewKeyProtectionServiceClient(conn)
+	resp, err := client.Heartbeat(context.Background(), &kpspb.HeartbeatRequest{})
+	if err != nil {
+		t.Fatalf("gRPC Heartbeat call failed: %v", err)
+	}
+
+	if resp.KpsBootToken != srv.bootToken {
+		t.Errorf("expected boot token %q, got %q", srv.bootToken, resp.KpsBootToken)
+	}
+}

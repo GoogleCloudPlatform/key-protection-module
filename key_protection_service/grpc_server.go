@@ -17,15 +17,17 @@ import (
 // grpcServer is the gRPC server wrapper for the KeyProtectionService.
 type grpcServer struct {
 	kpspb.UnimplementedKeyProtectionServiceServer
-	svc KeyProtectionService
+	svc       KeyProtectionService
+	bootToken string
 }
 
 // NewGrpcServer creates a new gRPC server wrapper for the KeyProtectionService.
 // It accepts the KeyProtectionService interface so tests can inject mocks
 // directly without going through the production Service wrapper.
-func NewGrpcServer(svc KeyProtectionService) kpspb.KeyProtectionServiceServer {
+func NewGrpcServer(svc KeyProtectionService, bootToken string) kpspb.KeyProtectionServiceServer {
 	return &grpcServer{
-		svc: svc,
+		svc:       svc,
+		bootToken: bootToken,
 	}
 }
 
@@ -157,4 +159,9 @@ func (s *grpcServer) GetKEMKey(ctx context.Context, req *kpspb.GetKEMKeyRequest)
 		},
 		RemainingLifespanSecs: lifespan,
 	}, nil
+}
+
+// Heartbeat implements the Heartbeat RPC.
+func (s *grpcServer) Heartbeat(_ context.Context, _ *kpspb.HeartbeatRequest) (*kpspb.HeartbeatResponse, error) {
+	return &kpspb.HeartbeatResponse{KpsBootToken: s.bootToken}, nil
 }

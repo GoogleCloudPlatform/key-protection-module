@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"net"
 
-	kpspb "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/proto"
+	kpsapi "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/proto"
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 )
 
@@ -14,6 +15,7 @@ type Server struct {
 	grpcServer *grpc.Server
 	listener   net.Listener
 	kps        KeyProtectionService
+	bootToken  string
 }
 
 // NewServer creates a new KPS gRPC server listening on the given TCP port.
@@ -33,13 +35,16 @@ func newServerWithKPS(port int, kps KeyProtectionService) (*Server, error) {
 		grpc.UnaryInterceptor(ValidationInterceptor),
 	)
 
-	kpspb.RegisterKeyProtectionServiceServer(grpcServer, NewGrpcServer(kps))
+	bootToken := uuid.New().String()
+	kpsapi.RegisterKeyProtectionServiceServer(grpcServer, NewGrpcServer(kps, bootToken))
 
 	return &Server{
 		grpcServer: grpcServer,
 		listener:   ln,
 		kps:        kps,
+		bootToken:  bootToken,
 	}, nil
+
 }
 
 // Serve starts the gRPC server listening on the given port.

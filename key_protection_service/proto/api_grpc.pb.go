@@ -24,6 +24,7 @@ const (
 	KeyProtectionService_EnumerateKEMKeys_FullMethodName   = "/keymanager.key_protection_service.KeyProtectionService/EnumerateKEMKeys"
 	KeyProtectionService_DestroyKEMKey_FullMethodName      = "/keymanager.key_protection_service.KeyProtectionService/DestroyKEMKey"
 	KeyProtectionService_GetKEMKey_FullMethodName          = "/keymanager.key_protection_service.KeyProtectionService/GetKEMKey"
+	KeyProtectionService_Heartbeat_FullMethodName          = "/keymanager.key_protection_service.KeyProtectionService/Heartbeat"
 )
 
 // KeyProtectionServiceClient is the client API for KeyProtectionService service.
@@ -35,6 +36,7 @@ type KeyProtectionServiceClient interface {
 	EnumerateKEMKeys(ctx context.Context, in *EnumerateKEMKeysRequest, opts ...grpc.CallOption) (*EnumerateKEMKeysResponse, error)
 	DestroyKEMKey(ctx context.Context, in *DestroyKEMKeyRequest, opts ...grpc.CallOption) (*DestroyKEMKeyResponse, error)
 	GetKEMKey(ctx context.Context, in *GetKEMKeyRequest, opts ...grpc.CallOption) (*GetKEMKeyResponse, error)
+	Heartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatResponse, error)
 }
 
 type keyProtectionServiceClient struct {
@@ -95,6 +97,16 @@ func (c *keyProtectionServiceClient) GetKEMKey(ctx context.Context, in *GetKEMKe
 	return out, nil
 }
 
+func (c *keyProtectionServiceClient) Heartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HeartbeatResponse)
+	err := c.cc.Invoke(ctx, KeyProtectionService_Heartbeat_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // KeyProtectionServiceServer is the server API for KeyProtectionService service.
 // All implementations should embed UnimplementedKeyProtectionServiceServer
 // for forward compatibility.
@@ -104,6 +116,7 @@ type KeyProtectionServiceServer interface {
 	EnumerateKEMKeys(context.Context, *EnumerateKEMKeysRequest) (*EnumerateKEMKeysResponse, error)
 	DestroyKEMKey(context.Context, *DestroyKEMKeyRequest) (*DestroyKEMKeyResponse, error)
 	GetKEMKey(context.Context, *GetKEMKeyRequest) (*GetKEMKeyResponse, error)
+	Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error)
 }
 
 // UnimplementedKeyProtectionServiceServer should be embedded to have
@@ -127,6 +140,9 @@ func (UnimplementedKeyProtectionServiceServer) DestroyKEMKey(context.Context, *D
 }
 func (UnimplementedKeyProtectionServiceServer) GetKEMKey(context.Context, *GetKEMKeyRequest) (*GetKEMKeyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetKEMKey not implemented")
+}
+func (UnimplementedKeyProtectionServiceServer) Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Heartbeat not implemented")
 }
 func (UnimplementedKeyProtectionServiceServer) testEmbeddedByValue() {}
 
@@ -238,6 +254,24 @@ func _KeyProtectionService_GetKEMKey_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _KeyProtectionService_Heartbeat_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HeartbeatRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(KeyProtectionServiceServer).Heartbeat(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: KeyProtectionService_Heartbeat_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(KeyProtectionServiceServer).Heartbeat(ctx, req.(*HeartbeatRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // KeyProtectionService_ServiceDesc is the grpc.ServiceDesc for KeyProtectionService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -264,6 +298,10 @@ var KeyProtectionService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetKEMKey",
 			Handler:    _KeyProtectionService_GetKEMKey_Handler,
+		},
+		{
+			MethodName: "Heartbeat",
+			Handler:    _KeyProtectionService_Heartbeat_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
