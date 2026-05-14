@@ -68,89 +68,10 @@ if ! timeout 30s bash -c "until grep -q 'Heartbeat handshake successful' '$AGENT
 fi
 echo "Heartbeat handshake successful!"
 
-CURL=(curl --silent --show-error --unix-socket "$SOCKET_PATH")
-
-# --- 1. GET /v1/capabilities -> 200, mentions DHKEM_X25519
-echo "Step 1: GET /v1/capabilities"
-CAP_BODY=$("${CURL[@]}" --fail "http://localhost/v1/capabilities")
-echo "$CAP_BODY" | grep -q "KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256" \
-    || { echo "ERROR: capabilities missing DHKEM_X25519: $CAP_BODY"; exit 1; }
-
-# --- 2. POST /v1/keys:generate_key -> 200, returns UUID handle
-echo "Step 2: POST /v1/keys:generate_key"
-GEN_REQ='{"algorithm":{"type":"kem","params":{"kem_id":"KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256"}},"lifespan":3600}'
-GEN_BODY=$("${CURL[@]}" --fail -H "Content-Type: application/json" \
-    -X POST --data "$GEN_REQ" "http://localhost/v1/keys:generate_key")
-KEY_HANDLE=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['key_handle']['handle'])" "$GEN_BODY")
-if ! [[ "$KEY_HANDLE" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
-    echo "ERROR: generate_key returned bad handle: $GEN_BODY"
-    exit 1
-fi
-echo "  generated KEM key handle: $KEY_HANDLE"
-
-# --- 3. GET /v1/keys -> 200, contains our handle
-echo "Step 3: GET /v1/keys (expect our key present)"
-ENUM_BODY=$("${CURL[@]}" --fail "http://localhost/v1/keys")
-python3 - "$ENUM_BODY" "$KEY_HANDLE" <<'PY' || exit 1
-import json, sys
-body, handle = sys.argv[1], sys.argv[2]
-data = json.loads(body)
-handles = [k["key_handle"]["handle"] for k in data.get("key_infos", [])]
-if handle not in handles:
-    print(f"ERROR: generated handle {handle} not in enumerate result: {handles}")
-    sys.exit(1)
-PY
-
-# --- 4. POST /v1/keys:decap with bogus ciphertext -> 5xx (gRPC error propagated)
-echo "Step 4: POST /v1/keys:decap (expect error for bogus ciphertext)"
-DECAP_REQ=$(python3 -c '
-import base64, json, sys
-body = {
-  "key_handle": {"handle": sys.argv[1]},
-  "ciphertext": {
-    "algorithm": "KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256",
-    "ciphertext": base64.b64encode(b"bogus-ciphertext-for-e2e-test").decode(),
-  },
-  "aad": "",
-}
-print(json.dumps(body))' "$KEY_HANDLE")
-DECAP_STATUS=$("${CURL[@]}" -o /dev/null -w "%{http_code}" -H "Content-Type: application/json" \
-    -X POST --data "$DECAP_REQ" "http://localhost/v1/keys:decap")
-if [ "$DECAP_STATUS" = "200" ] || [ "$DECAP_STATUS" = "204" ]; then
-    echo "ERROR: decap with bogus ciphertext returned success ($DECAP_STATUS)"
-    exit 1
-fi
-echo "  decap rejected bogus ciphertext (HTTP $DECAP_STATUS)"
-
-# --- 5. POST /v1/keys:destroy -> 204
-echo "Step 5: POST /v1/keys:destroy"
-DESTROY_REQ=$(python3 -c 'import json,sys; print(json.dumps({"key_handle":{"handle":sys.argv[1]}}))' "$KEY_HANDLE")
-DESTROY_STATUS=$("${CURL[@]}" -o /dev/null -w "%{http_code}" -H "Content-Type: application/json" \
-    -X POST --data "$DESTROY_REQ" "http://localhost/v1/keys:destroy")
-if [ "$DESTROY_STATUS" != "204" ]; then
-    echo "ERROR: destroy returned HTTP $DESTROY_STATUS, expected 204"
-    exit 1
-fi
-
-# --- 6. GET /v1/keys -> 200, does NOT contain our handle
-echo "Step 6: GET /v1/keys (expect our key gone)"
-ENUM_BODY2=$("${CURL[@]}" --fail "http://localhost/v1/keys")
-python3 - "$ENUM_BODY2" "$KEY_HANDLE" <<'PY' || exit 1
-import json, sys
-body, handle = sys.argv[1], sys.argv[2]
-data = json.loads(body)
-handles = [k["key_handle"]["handle"] for k in data.get("key_infos", [])]
-if handle in handles:
-    print(f"ERROR: destroyed handle {handle} still present: {handles}")
-    sys.exit(1)
-PY
-
-# --- 7. Second destroy on the same key -> 404 (mapping gone)
-echo "Step 7: POST /v1/keys:destroy (second call expects 404)"
-DESTROY2_STATUS=$("${CURL[@]}" -o /dev/null -w "%{http_code}" -H "Content-Type: application/json" \
-    -X POST --data "$DESTROY_REQ" "http://localhost/v1/keys:destroy")
-if [ "$DESTROY2_STATUS" != "404" ]; then
-    echo "ERROR: second destroy returned HTTP $DESTROY2_STATUS, expected 404"
+echo "Running python e2e tests..."
+export SOCKET_PATH
+if ! /opt/venv/bin/pytest -v /app/tests/test_grpc_wsd_e2e.py; then
+    echo "ERROR: Python e2e tests failed."
     exit 1
 fi
 
