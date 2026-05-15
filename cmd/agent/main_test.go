@@ -31,7 +31,7 @@ func TestRunWSD(t *testing.T) {
 
 	errChan := make(chan error, 1)
 	go func() {
-		errChan <- runWSD(ctx, socketPath, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
+		errChan <- runWsd(ctx, socketPath, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED, "")
 	}()
 
 	// Wait for the socket file to be created to ensure the server has started
@@ -55,10 +55,10 @@ func TestRunWSD(t *testing.T) {
 	select {
 	case err := <-errChan:
 		if err != nil {
-			t.Errorf("runWSD() returned an unexpected error: %v", err)
+			t.Errorf("runWsd() returned an unexpected error: %v", err)
 		}
 	case <-time.After(testTimeout):
-		t.Fatal("runWSD() did not shut down cleanly in time")
+		t.Fatal("runWsd() did not shut down cleanly in time")
 	}
 }
 
@@ -75,9 +75,9 @@ func TestRunWSD_InvalidSocketPath(t *testing.T) {
 
 	socketPath := filepath.Join(tmpFile.Name(), "wsd.sock")
 
-	err = runWSD(ctx, socketPath, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
+	err = runWsd(ctx, socketPath, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED, "")
 	if err == nil {
-		t.Fatal("Expected runWSD() to return an error for invalid socket path")
+		t.Fatal("Expected runWsd() to return an error for invalid socket path")
 	}
 }
 
@@ -85,7 +85,7 @@ func TestRunKPS(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Pick an available port
-	ln, err := net.Listen("tcp", ":0")
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("Failed to pick an available port: %v", err)
 	}
@@ -94,11 +94,11 @@ func TestRunKPS(t *testing.T) {
 
 	errChan := make(chan error, 1)
 	go func() {
-		errChan <- runKPS(ctx, port)
+		errChan <- runKps(ctx, port)
 	}()
 
 	// Wait for the server to start by polling the port
-	addr := fmt.Sprintf(":%d", port)
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	started := false
 	for range pollAttempts {
 		conn, err := net.Dial("tcp", addr)
@@ -121,10 +121,10 @@ func TestRunKPS(t *testing.T) {
 	select {
 	case err := <-errChan:
 		if err != nil {
-			t.Errorf("runKPS() returned an unexpected error: %v", err)
+			t.Errorf("runKps() returned an unexpected error: %v", err)
 		}
 	case <-time.After(testTimeout):
-		t.Fatal("runKPS() did not shut down cleanly in time")
+		t.Fatal("runKps() did not shut down cleanly in time")
 	}
 }
 
@@ -132,9 +132,9 @@ func TestRunKPS_InvalidPort(t *testing.T) {
 	ctx := context.Background()
 
 	// Use an impossible port
-	err := runKPS(ctx, -1)
+	err := runKps(ctx, -1)
 	if err == nil {
-		t.Fatal("Expected runKPS() to return an error for invalid port")
+		t.Fatal("Expected runKps() to return an error for invalid port")
 	}
 }
 
@@ -144,7 +144,7 @@ func TestParseEnvEnum(t *testing.T) {
 		"VALUE1": 1,
 		"VALUE2": 2,
 	}
-	defaultValue := keymanager.ServiceRole_WSD
+	defaultValue := keymanager.ServiceRole_SERVICE_ROLE_WSD
 
 	// Test default value
 	if err := os.Unsetenv(key); err != nil {

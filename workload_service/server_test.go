@@ -11,17 +11,22 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	kpskcc "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/key_custody_core"
+	kpsapi "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/proto"
 	api "github.com/GoogleCloudPlatform/key-protection-module/workload_service/proto"
 	"github.com/google/uuid"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	kps "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service"
 	keymanager "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func newTestServer(t *testing.T, kemGen kps.KeyProtectionService, bindingGen WorkloadService) *Server {
@@ -30,8 +35,7 @@ func newTestServer(t *testing.T, kemGen kps.KeyProtectionService, bindingGen Wor
 		t.Fatalf("failed to create test server: %v", err)
 	}
 	t.Cleanup(func() {
-		_ = srv.listener.Close()
-		close(srv.claimsChan)
+		_ = srv.Shutdown(context.Background())
 	})
 	return srv
 }
@@ -72,6 +76,10 @@ func (m *mockWorkloadService) GetBindingKey(_ uuid.UUID) ([]byte, *keymanager.Hp
 	return m.pubKey, m.algo, m.err
 }
 
+func (m *mockWorkloadService) DestroyAllKeys() error {
+	return nil
+}
+
 // mockKeyProtectionService implements KeyProtectionService for testing.
 type mockKeyProtectionService struct {
 	uuid                  uuid.UUID
@@ -93,29 +101,29 @@ type mockKeyProtectionService struct {
 	enumerateErr          error
 }
 
-func (m *mockKeyProtectionService) GenerateKEMKeypair(_ *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+func (m *mockKeyProtectionService) GenerateKEMKeypair(_ context.Context, _ *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	m.receivedPubKey = bindingPubKey
 	m.receivedLifespan = lifespanSecs
 	return m.uuid, m.pubKey, m.err
 }
 
-func (m *mockKeyProtectionService) EnumerateKEMKeys(_, _ int) ([]kpskcc.KEMKeyInfo, bool, error) {
+func (m *mockKeyProtectionService) EnumerateKEMKeys(_ context.Context, _, _ int32) ([]kpskcc.KEMKeyInfo, bool, error) {
 	return m.enumeratedKeys, false, m.enumerateErr
 }
 
-func (m *mockKeyProtectionService) DestroyKEMKey(kemUUID uuid.UUID) error {
+func (m *mockKeyProtectionService) DestroyKEMKey(_ context.Context, kemUUID uuid.UUID) error {
 	m.destroyedUUID = kemUUID
 	return m.destroyErr
 }
 
-func (m *mockKeyProtectionService) DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error) {
+func (m *mockKeyProtectionService) DecapAndSeal(_ context.Context, kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error) {
 	m.receivedKEMUUID = kemUUID
 	m.receivedEncKey = encapsulatedKey
 	m.receivedAAD = aad
 	return m.sealEnc, m.sealedCT, m.err
 }
 
-func (m *mockKeyProtectionService) GetKEMKey(_ uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+func (m *mockKeyProtectionService) GetKEMKey(_ context.Context, _ uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
 	return m.pubKey, m.bindingPubKey, m.algo, m.remainingLifespanSecs, m.err
 }
 
@@ -1454,5 +1462,139 @@ func TestGetClaimsFromChannel(t *testing.T) {
 				t.Errorf("result mismatch: expected %v, got %v", expectedReply, result)
 			}
 		})
+	}
+}
+
+func TestHttpStatusFromError_FFISentinels(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want int
+	}{
+		{"nil", nil, http.StatusOK},
+		{"not_found", keymanager.Status_STATUS_NOT_FOUND.ToStatus(), http.StatusNotFound},
+		{"invalid_argument", keymanager.Status_STATUS_INVALID_ARGUMENT.ToStatus(), http.StatusBadRequest},
+		{"unsupported_algorithm", keymanager.Status_STATUS_UNSUPPORTED_ALGORITHM.ToStatus(), http.StatusBadRequest},
+		{"invalid_key", keymanager.Status_STATUS_INVALID_KEY.ToStatus(), http.StatusBadRequest},
+		{"permission_denied", keymanager.Status_STATUS_PERMISSION_DENIED.ToStatus(), http.StatusForbidden},
+		{"unauthenticated", keymanager.Status_STATUS_UNAUTHENTICATED.ToStatus(), http.StatusUnauthorized},
+		{"already_exists", keymanager.Status_STATUS_ALREADY_EXISTS.ToStatus(), http.StatusConflict},
+		{"internal_default", errors.New("boom"), http.StatusInternalServerError},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := httpStatusFromError(tc.err); got != tc.want {
+				t.Errorf("httpStatusFromError(%v) = %d, want %d", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFFIStatusFromGrpcError(t *testing.T) {
+	cases := []struct {
+		name     string
+		err      error
+		wantNil  bool
+		wantFFI  keymanager.Status
+		wantSame bool // true if helper should pass the err through unchanged
+	}{
+		{"nil", nil, true, 0, false},
+		{"not_found", status.Error(codes.NotFound, "x"), false, keymanager.Status_STATUS_NOT_FOUND, false},
+		{"invalid_argument", status.Error(codes.InvalidArgument, "x"), false, keymanager.Status_STATUS_INVALID_ARGUMENT, false},
+		{"permission_denied", status.Error(codes.PermissionDenied, "x"), false, keymanager.Status_STATUS_PERMISSION_DENIED, false},
+		{"unauthenticated", status.Error(codes.Unauthenticated, "x"), false, keymanager.Status_STATUS_UNAUTHENTICATED, false},
+		{"already_exists", status.Error(codes.AlreadyExists, "x"), false, keymanager.Status_STATUS_ALREADY_EXISTS, false},
+		{"unavailable_passes_through", status.Error(codes.Unavailable, "x"), false, 0, true},
+		{"non_grpc_passes_through", errors.New("plain"), false, 0, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ffiStatusFromGrpcError(tc.err)
+			if tc.wantNil {
+				if got != nil {
+					t.Fatalf("expected nil, got %v", got)
+				}
+				return
+			}
+			if tc.wantSame {
+				if got != tc.err {
+					t.Fatalf("expected pass-through, got %v", got)
+				}
+				return
+			}
+			if !errors.Is(got, tc.wantFFI) {
+				t.Fatalf("expected errors.Is(got, %v) to be true, got %v", tc.wantFFI, got)
+			}
+		})
+	}
+}
+
+func TestPerformHeartbeatSuccess(t *testing.T) {
+	srv := &Server{
+		kemToBindingMap: make(map[uuid.UUID]uuid.UUID),
+		mu:              sync.RWMutex{},
+	}
+	token := "test-token"
+	client := &mockKPSClient{token: token}
+	var cachedToken string
+
+	srv.performHeartbeat(context.Background(), client, &cachedToken)
+
+	if cachedToken != token {
+		t.Errorf("expected cached token %s, got %s", token, cachedToken)
+	}
+}
+
+func TestPerformHeartbeatTokenMismatch(t *testing.T) {
+	srv := &Server{
+		kemToBindingMap: make(map[uuid.UUID]uuid.UUID),
+		mu:              sync.RWMutex{},
+		workloadService: &mockWorkloadService{},
+	}
+	srv.kemToBindingMap[uuid.New()] = uuid.New()
+
+	client := &mockKPSClient{token: "new-token"}
+	cachedToken := "old-token"
+
+	srv.performHeartbeat(context.Background(), client, &cachedToken)
+
+	if cachedToken != "new-token" {
+		t.Errorf("expected cached token to be updated to new-token, got %s", cachedToken)
+	}
+	if len(srv.kemToBindingMap) != 0 {
+		t.Errorf("expected kemToBindingMap to be cleared, got size %d", len(srv.kemToBindingMap))
+	}
+}
+
+type mockKPSClient struct {
+	kpsapi.KeyProtectionServiceClient
+	token string
+	err   error
+}
+
+func (m *mockKPSClient) Heartbeat(_ context.Context, _ *kpsapi.HeartbeatRequest, _ ...grpc.CallOption) (*kpsapi.HeartbeatResponse, error) {
+	return &kpsapi.HeartbeatResponse{KpsBootToken: m.token}, m.err
+}
+
+func TestPerformHeartbeatTimeout(t *testing.T) {
+	srv := &Server{
+		kemToBindingMap: make(map[uuid.UUID]uuid.UUID),
+		mu:              sync.RWMutex{},
+		workloadService: &mockWorkloadService{},
+		initialBackoff:  1 * time.Millisecond,
+		maxBackoff:      4 * time.Millisecond,
+	}
+	// Add a dummy mapping to verify cleanup
+	kemUUID := uuid.New()
+	srv.kemToBindingMap[kemUUID] = uuid.New()
+
+	// Mock client that always fails
+	client := &mockKPSClient{err: fmt.Errorf("heartbeat failed")}
+
+	srv.performHeartbeat(context.Background(), client, new(string))
+
+	// Verify that cleanup was triggered (map should be empty)
+	if len(srv.kemToBindingMap) != 0 {
+		t.Errorf("expected kemToBindingMap to be cleared after persistent failure, got size %d", len(srv.kemToBindingMap))
 	}
 }

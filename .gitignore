@@ -19,3 +19,12 @@ bin/
 
 # OS
 .DS_Store
+
+# Python Virtual Environment and cache
+.venv/
+.pytest_cache/
+__pycache__/
+*.pyc
+
+# Local built binaries
+/agent

@@ -14,35 +14,86 @@
 # limitations under the License.
 
 # This script runs on the GCE VM as a startup script.
-# It fetches the test image and location from the VM metadata and runs the test container.
+# It fetches the container image, environment variables, and extra arguments 
+# from VM metadata and runs the container.
 
 set -e
 
-echo "Starting KPM VM Test Startup Script..."
+echo "Starting KPM VM Test Startup Script ..."
+
+# Constants
+METADATA_BASE_URL="http://metadata.google.internal/computeMetadata/v1/instance/attributes"
+METADATA_HEADER="Metadata-Flavor: Google"
+DOCKER_CONFIG_DIR="/tmp/docker-config"
 
 # Fetches configuration from VM metadata
 # We use the metadata server to avoid hardcoding these values in the script.
-LOCATION=$(curl -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/attributes/location)
-IMAGE=$(curl -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/attributes/test_image)
+LOCATION=$(curl -s -H "${METADATA_HEADER}" "${METADATA_BASE_URL}/location")
+
+# Try 'image' first, fallback to 'test_image' for backward compatibility
+IMAGE=$(curl -s -f -H "${METADATA_HEADER}" "${METADATA_BASE_URL}/image") || \
+IMAGE=$(curl -s -f -H "${METADATA_HEADER}" "${METADATA_BASE_URL}/test_image")
+
+DOCKER_ENV=$(curl -s -f -H "${METADATA_HEADER}" "${METADATA_BASE_URL}/docker_env" || true)
+DOCKER_ARGS=$(curl -s -f -H "${METADATA_HEADER}" "${METADATA_BASE_URL}/docker_args" || true)
+TEST_COMMAND=$(curl -s -f -H "${METADATA_HEADER}" "${METADATA_BASE_URL}/test_command" || true)
 
 if [ -z "$LOCATION" ] || [ -z "$IMAGE" ]; then
-  echo "ERROR: Missing required metadata 'location' or 'test_image'."
+  echo "ERROR: Missing required metadata 'location' or 'image'/'test_image'."
   exit 1
 fi
 
-export DOCKER_CONFIG=/tmp/docker-config
-mkdir -p "$DOCKER_CONFIG"
+export DOCKER_CONFIG="${DOCKER_CONFIG_DIR}"
+mkdir -p "${DOCKER_CONFIG}"
 
 # Log in to Artifact Registry
 echo "Logging into Artifact Registry at ${LOCATION}-docker.pkg.dev..."
 docker-credential-gcr configure-docker --registries="${LOCATION}-docker.pkg.dev"
 
-echo "Pulling test container: $IMAGE"
-docker pull "$IMAGE"
+echo "Pulling container: $IMAGE"
+pull_success=false
+for i in {1..3}; do
+  if docker pull "$IMAGE"; then
+    pull_success=true
+    break
+  fi
+  echo "WARNING: docker pull failed (attempt $i/3), retrying in 5 seconds..."
+  sleep 5
+done
 
-echo "Starting test container..."
+if [ "$pull_success" = false ]; then
+  echo "ERROR: Failed to pull docker image after 3 attempts."
+  echo "KPM_TEST_CONTAINER_EXITED_WITH_STATUS: 125"
+  exit 1
+fi
+
+# Parse DOCKER_ENV into array of -e flags
+ENV_ARGS=()
+if [ -n "$DOCKER_ENV" ]; then
+  for env in $DOCKER_ENV; do
+    ENV_ARGS+=("-e" "$env")
+  done
+fi
+
+# Parse DOCKER_ARGS into array
+EXTRA_ARGS=()
+if [ -n "$DOCKER_ARGS" ]; then
+  for arg in $DOCKER_ARGS; do
+    EXTRA_ARGS+=("$arg")
+  done
+fi
+
+echo "Starting container..."
 # memfd_secret requires seccomp=unconfined on some COS versions or kernel configs
-docker run --rm --security-opt seccomp=unconfined "$IMAGE"
+set +e
+if [ -n "$TEST_COMMAND" ]; then
+  echo "Running custom test command: $TEST_COMMAND"
+  docker run --rm --security-opt seccomp=unconfined "${ENV_ARGS[@]}" --entrypoint /bin/bash "$IMAGE" -c "$TEST_COMMAND"
+else
+  docker run --rm --security-opt seccomp=unconfined "${ENV_ARGS[@]}" "${EXTRA_ARGS[@]}" "$IMAGE"
+fi
 exit_code=$?
+set -e
 
 echo "KPM_TEST_CONTAINER_EXITED_WITH_STATUS: $exit_code"
+exit "$exit_code"

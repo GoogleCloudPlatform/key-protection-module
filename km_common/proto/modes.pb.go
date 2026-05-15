@@ -27,23 +27,23 @@ const (
 	ServiceRole_SERVICE_ROLE_UNSPECIFIED ServiceRole = 0
 	// The agent acts as the Workload Services Daemon (WSD),
 	// exposing key management APIs to workloads.
-	ServiceRole_WSD ServiceRole = 1
+	ServiceRole_SERVICE_ROLE_WSD ServiceRole = 1
 	// The agent acts as the Key Protection Service (KPS),
 	// providing remote key protection capabilities to the WSD.
-	ServiceRole_KPS ServiceRole = 2
+	ServiceRole_SERVICE_ROLE_KPS ServiceRole = 2
 )
 
 // Enum value maps for ServiceRole.
 var (
 	ServiceRole_name = map[int32]string{
 		0: "SERVICE_ROLE_UNSPECIFIED",
-		1: "WSD",
-		2: "KPS",
+		1: "SERVICE_ROLE_WSD",
+		2: "SERVICE_ROLE_KPS",
 	}
 	ServiceRole_value = map[string]int32{
 		"SERVICE_ROLE_UNSPECIFIED": 0,
-		"WSD":                      1,
-		"KPS":                      2,
+		"SERVICE_ROLE_WSD":         1,
+		"SERVICE_ROLE_KPS":         2,
 	}
 )
 
@@ -74,6 +74,7 @@ func (ServiceRole) EnumDescriptor() ([]byte, []int) {
 	return file_km_common_proto_modes_proto_rawDescGZIP(), []int{0}
 }
 
+// buf:lint:ignore ENUM_VALUE_PREFIX
 type KeyProtectionMechanism int32
 
 const (
@@ -139,11 +140,11 @@ var File_km_common_proto_modes_proto protoreflect.FileDescriptor
 const file_km_common_proto_modes_proto_rawDesc = "" +
 	"\n" +
 	"\x1bkm_common/proto/modes.proto\x12\n" +
-	"keymanager*=\n" +
+	"keymanager*W\n" +
 	"\vServiceRole\x12\x1c\n" +
-	"\x18SERVICE_ROLE_UNSPECIFIED\x10\x00\x12\a\n" +
-	"\x03WSD\x10\x01\x12\a\n" +
-	"\x03KPS\x10\x02*\x86\x01\n" +
+	"\x18SERVICE_ROLE_UNSPECIFIED\x10\x00\x12\x14\n" +
+	"\x10SERVICE_ROLE_WSD\x10\x01\x12\x14\n" +
+	"\x10SERVICE_ROLE_KPS\x10\x02*\x86\x01\n" +
 	"\x16KeyProtectionMechanism\x12(\n" +
 	"$KEY_PROTECTION_MECHANISM_UNSPECIFIED\x10\x00\x12\v\n" +
 	"\aDEFAULT\x10\x01\x12\x15\n" +

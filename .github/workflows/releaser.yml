@@ -32,6 +32,7 @@ jobs:
   release:
     permissions:
       contents: write
+      id-token: write
     strategy:
       matrix:
         go-version: [1.24.x]
@@ -74,7 +75,7 @@ jobs:
         run: cargo build --release
 
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6.2.1
+        uses: goreleaser/goreleaser-action@90a3faa9d0182683851fbfa97ca1a2cb983bfca3 # v6.2.1
         if: success() && (startsWith(github.ref, 'refs/tags/v') || startsWith(inputs.refToBuild, 'v'))
         with:
           version: v2.7.0

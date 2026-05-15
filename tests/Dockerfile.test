@@ -35,6 +35,9 @@ RUN apt-get update && apt-get install -y \
     libclang-dev \
     git \
     protobuf-compiler \
+    python3 \
+    python3-pip \
+    python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
 # Install CMake 3.28.3
@@ -58,7 +61,12 @@ RUN ./generate_ffi_headers.sh
 # Build without cache mount for target to ensure artifacts persist for the ENTRYPOINT
 RUN --mount=type=cache,target=/root/.cargo/registry \
     --mount=type=cache,target=/root/.cargo/git \
-    cargo build --locked --workspace
+    cargo build --locked --workspace && \
+    CGO_ENABLED=1 go build -o /app/agent ./cmd/agent
+
+# Set up Python virtual environment with dependencies pre-cached
+RUN python3 -m venv /opt/venv && \
+    /opt/venv/bin/pip install -r tests/requirements.txt
 
 # The entrypoint runs all tests and exits with the corresponding code
 ENTRYPOINT ["/bin/bash", "-c", "set -o pipefail && cargo test --locked --workspace && GOCACHE=/tmp/go-cache go test -v ./... && GOCACHE=/tmp/go-cache go test -v -race -tags integration ./..."]

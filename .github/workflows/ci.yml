@@ -18,16 +18,22 @@ on:
     branches:
       - main
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+env:
+  RUST_COVERAGE_THRESHOLD: 85
+  GO_COVERAGE_THRESHOLD: 70 # temporarily set at 70% will be increased to 75% in future.
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   build-test:
     name: Build & Test (${{ matrix.os }}, ${{ matrix.arch }}, Go ${{ matrix.go-version }})
     strategy:
       matrix:
-        go-version: ['1.24.x']
+        go-version: ["1.24.x"]
         os: [ubuntu-latest, macos-latest]
         arch: [amd64, arm64]
         exclude:
@@ -40,25 +46,25 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           submodules: recursive
-      
+
       - name: Setup Go
         uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5.3.0
         with:
           go-version: ${{ matrix.go-version }}
           cache: true
-      
+
       - name: Setup Rust
         if: matrix.os == 'ubuntu-latest' && matrix.arch == 'amd64'
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           components: rustfmt, clippy
-      
+
       - name: Install Build Dependencies
         if: matrix.os == 'ubuntu-latest' && matrix.arch == 'amd64'
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake clang pkg-config libssl-dev protobuf-compiler
-      
+
       - name: Install cbindgen
         if: matrix.os == 'ubuntu-latest' && matrix.arch == 'amd64'
         run: cargo install --locked --version 0.29.2 cbindgen
@@ -79,18 +85,25 @@ jobs:
         run: |
           ./gen_keymanager.sh
           git diff -G'^[^/]' --exit-code km_common/proto/ workload_service/proto/
-      
+
       - name: Check FFI Header Generation
         if: matrix.os == 'ubuntu-latest' && matrix.arch == 'amd64'
         run: |
           ./generate_ffi_headers.sh
           git diff -G'^[^/]' --exit-code workload_service/key_custody_core/include/ key_protection_service/key_custody_core/include/
 
-      - name: Build and Test Rust
+      - name: Install cargo-llvm-cov
+        if: matrix.os == 'ubuntu-latest' && matrix.arch == 'amd64'
+        uses: taiki-e/install-action@7ea35f098a7369cd23488403f58be9c491a6c55f # v2.77.0
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Build and Test Rust with Coverage
         if: matrix.os == 'ubuntu-latest' && matrix.arch == 'amd64'
         run: |
-          cargo build --verbose
-          cargo test --verbose --workspace
+          cargo llvm-cov --all-features --workspace --fail-under-lines ${{ env.RUST_COVERAGE_THRESHOLD }}
+          # Rebuild WSD/KPS staticlibs without coverage instrumentation so Go/CGO can link them safely
+          cargo build --workspace
 
       - name: Build and Test Go
         env:
@@ -98,11 +111,36 @@ jobs:
           GOARCH: ${{ matrix.arch }}
           CGO_ENABLED: ${{ (matrix.os == 'ubuntu-latest' && matrix.arch == 'amd64') && '1' || '0' }}
         run: |
+          set -euo pipefail
           go build -v ./...
           if [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "amd64" ]; then
             # Full test suite on primary platform
-            go test -v -race ./...
+            go test -v -race -coverprofile=coverage.txt -covermode=atomic ./workload_service ./key_protection_service ./cmd/agent
             go test -v -race -tags integration ./...
+            
+            # Verify coverage threshold
+            echo "Checking coverage..."
+            if [ ! -f coverage.txt ] || [ ! -s coverage.txt ]; then
+              echo "Error: coverage.txt is missing or empty"
+              exit 1
+            fi
+            COVERAGE_LINE=$(go tool cover -func=coverage.txt | grep total || true)
+            if [ -z "$COVERAGE_LINE" ]; then
+              echo "Error: Could not find total coverage line in report"
+              exit 1
+            fi
+            COVERAGE=$(echo "$COVERAGE_LINE" | awk '{print $3}' | sed 's/%//')
+            echo "Total coverage: $COVERAGE%"
+            THRESHOLD=${{ env.GO_COVERAGE_THRESHOLD }}
+            COVERAGE_INT=${COVERAGE%.*}
+            if [ -z "$COVERAGE_INT" ]; then
+              echo "Error: Failed to parse coverage integer"
+              exit 1
+            fi
+            if [ "$COVERAGE_INT" -lt "$THRESHOLD" ]; then
+              echo "Coverage $COVERAGE% is below threshold $THRESHOLD%"
+              exit 1
+            fi
             
             # Verify stubs on primary platform by forcing CGO off
             echo "Verifying stubs (CGO_ENABLED=0)..."
@@ -113,6 +151,38 @@ jobs:
             go test -v ./workload_service/key_custody_core/... ./key_protection_service/key_custody_core/...
           fi
 
+      - name: Build and Test Go (Attestation Service)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          set -euo pipefail
+          cd keymanager/attestation_service
+          go build -v ./...
+          # Run unit tests with coverage and enforce 75% threshold (only runs on primary Linux matrix)
+          go test -v -race -coverprofile=coverage.txt -covermode=atomic ./
+          
+          echo "Checking coverage for Attestation Service..."
+          if [ ! -f coverage.txt ] || [ ! -s coverage.txt ]; then
+            echo "Error: coverage.txt is missing or empty"
+            exit 1
+          fi
+          COVERAGE_LINE=$(go tool cover -func=coverage.txt | grep total || true)
+          if [ -z "$COVERAGE_LINE" ]; then
+            echo "Error: Could not find total coverage line in report"
+            exit 1
+          fi
+          COVERAGE=$(echo "$COVERAGE_LINE" | awk '{print $3}' | sed 's/%//')
+          echo "Total coverage: $COVERAGE%"
+          THRESHOLD=${{ env.GO_COVERAGE_THRESHOLD }}
+          COVERAGE_INT=${COVERAGE%.*}
+          if [ -z "$COVERAGE_INT" ]; then
+            echo "Error: Failed to parse coverage integer"
+            exit 1
+          fi
+          if [ "$COVERAGE_INT" -lt "$THRESHOLD" ]; then
+            echo "Coverage $COVERAGE% is below threshold $THRESHOLD%"
+            exit 1
+          fi
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -120,30 +190,30 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           submodules: recursive
-      
+
       - name: Setup Go
         uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5.3.0
         with:
-          go-version: '1.24.x'
+          go-version: "1.24.x"
           cache: true
-      
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           components: rustfmt, clippy
           targets: x86_64-unknown-linux-gnu
-      
+
       - name: Install Nightly Rustfmt
         run: rustup toolchain install nightly --component rustfmt
-      
+
       - name: Install Build Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake clang pkg-config libssl-dev
-      
+
       - name: Install cbindgen
         run: cargo install --locked --version 0.29.2 cbindgen
-      
+
       - name: Install bindgen-cli
         run: cargo install --locked --version 0.72.1 bindgen-cli
 
@@ -153,26 +223,22 @@ jobs:
       - name: Build Rust Libraries
         run: cargo build --workspace
 
+      - name: Check Rust WSD Fuzz Target
+        run: cargo check --manifest-path workload_service/key_custody_core/fuzz/Cargo.toml
+
+      - name: Check Rust KPS Fuzz Target
+        run: cargo check --manifest-path key_protection_service/key_custody_core/fuzz/Cargo.toml
+
       - name: Rust Format Check
         run: cargo +nightly fmt --all -- --check
-      
+
       - name: Rust Clippy
         run: cargo clippy --workspace --exclude bssl-crypto --exclude bssl-sys --no-deps -- -D warnings
 
       - name: Golangci-lint
-        uses: golangci/golangci-lint-action@55c2c1448f86e01eaae002a5a3a9624417608d84 # v6.2.0
+        uses: golangci/golangci-lint-action@ec5d18412c0aeab7936cb16880d708ba2a64e1ae # v6.2.0
         with:
-          version: v1.64.2
-          args: >
-            -E stylecheck
-            -E goimports
-            -E misspell
-            -E revive
-            -E gofmt
-            --exclude-use-default=false
-            --max-same-issues=0
-            --max-issues-per-linter=0
-            --timeout 2m
+          version: v1.64.8
 
   lintc:
     name: Lint CGO
@@ -181,27 +247,27 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           submodules: recursive
-      
+
       - name: Setup Go
         uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5.3.0
         with:
-          go-version: '1.24.x'
+          go-version: "1.24.x"
           cache: true
-      
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      
+
       - name: Install Build Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake clang pkg-config libssl-dev
-      
+
       - name: Install cbindgen
         run: cargo install --locked --version 0.29.2 cbindgen
-      
+
       - name: Install bindgen-cli
         run: cargo install --locked --version 0.72.1 bindgen-cli
-      
+
       - name: Generate FFI Headers
         run: ./generate_ffi_headers.sh
 
@@ -210,6 +276,46 @@ jobs:
 
       - name: Check for CGO Warnings (gcc)
         run: CGO_CFLAGS=-Werror CC=gcc go build ./...
-      
+
       - name: Check for CGO Warnings (clang)
         run: CGO_CFLAGS=-Werror CC=clang go build ./...
+
+  buf:
+    name: Buf
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          submodules: recursive
+
+      - uses: bufbuild/buf-action@fd21066df7214747548607aaa45548ba2b9bc1ff # v1.4.0
+        with:
+          lint: true
+          pr_comment: false
+          breaking: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'buf skip breaking') }}
+          breaking_against: "https://github.com/${{ github.repository }}.git#branch=main"
+          exclude_paths: |
+            keymanager/attestation_service/proto
+
+  audit:
+    name: Cargo Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          submodules: recursive
+      - name: Audit Root
+        uses: actions-rust-lang/audit@72c09e02f132669d52284a3323acdb503cfc1a24 #v1.2.7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          workingDirectory: .
+      - name: Audit WSD Fuzz
+        uses: actions-rust-lang/audit@72c09e02f132669d52284a3323acdb503cfc1a24 #v1.2.7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          workingDirectory: workload_service/key_custody_core/fuzz
+      - name: Audit KPS Fuzz
+        uses: actions-rust-lang/audit@72c09e02f132669d52284a3323acdb503cfc1a24 #v1.2.7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          workingDirectory: key_protection_service/key_custody_core/fuzz

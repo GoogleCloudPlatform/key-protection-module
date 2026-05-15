@@ -3,12 +3,12 @@ syntax = "proto3";
 // API definitions for the Workload Services Daemon (WSD)
 package keymanager.workload_service;
 
-option go_package = "github.com/GoogleCloudPlatform/key-protection-module/workload_service/proto;api";
-
+import "buf/validate/validate.proto";
 import "km_common/proto/algorithms.proto";
 import "km_common/proto/crypto_types.proto";
 import "km_common/proto/payload.proto";
-import "buf/validate/validate.proto";
+
+option go_package = "github.com/GoogleCloudPlatform/key-protection-module/workload_service/proto;api";
 
 // Response containing the list of supported cryptographic algorithms for operations like HPKE/KEM.
 message GetCapabilitiesResponse {
@@ -21,7 +21,10 @@ message GenerateKeyRequest {
   // The specific algorithm to use for the new keypair.
   keymanager.AlgorithmDetails algorithm = 1 [(buf.validate.field).required = true];
   // The requested duration (in seconds) before the key is automatically destroyed.
-  uint64 lifespan = 2 [(buf.validate.field).uint64 = {gt: 0, lte: 9223372036854775807}];
+  uint64 lifespan = 2 [(buf.validate.field).uint64 = {
+    gt: 0
+    lte: 9223372036854775807
+  }];
 }
 
 // Response from generating a new key.
@@ -30,7 +33,7 @@ message GenerateKeyResponse {
   keymanager.KeyHandle key_handle = 1 [(buf.validate.field).required = true];
   // The public key information for the generated keypair.
   keymanager.PubKeyInfo pub_key = 2;
-  // The isolation level/protection mechanism for the key 
+  // The isolation level/protection mechanism for the key
   // (e.g., "KEY_PROTECTION_VM_EMULATED", "KEY_PROTECTION_VM", or "DEFAULT").
   string key_protection_mechanism = 3;
   // A Unix timestamp indicating when the key is scheduled for automatic deletion.

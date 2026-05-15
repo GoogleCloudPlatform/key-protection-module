@@ -9,13 +9,14 @@ enum ServiceRole {
 
   // The agent acts as the Workload Services Daemon (WSD),
   // exposing key management APIs to workloads.
-  WSD = 1;
+  SERVICE_ROLE_WSD = 1;
 
   // The agent acts as the Key Protection Service (KPS),
   // providing remote key protection capabilities to the WSD.
-  KPS = 2;
+  SERVICE_ROLE_KPS = 2;
 }
 
+// buf:lint:ignore ENUM_VALUE_PREFIX
 enum KeyProtectionMechanism {
   KEY_PROTECTION_MECHANISM_UNSPECIFIED = 0;
 
