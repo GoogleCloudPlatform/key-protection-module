@@ -51,7 +51,7 @@ func (r *realWorkloadService) DestroyAllKeys() error {
 func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
 	// Wire up real FFI calls: WSD KCC for binding, KPS KCC (via KPS KOL) for KEM.
 	kpsSvc := kps.NewService()
-	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "test.sock", 0, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
+	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "test.sock", keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
 
 func TestIntegrationGenerateKeysUniqueMappings(t *testing.T) {
 	kpsSvc := kps.NewService()
-	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "test.sock", 0, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
+	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "test.sock", keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestIntegrationGenerateKeysUniqueMappings(t *testing.T) {
 
 func TestIntegrationDestroyKey(t *testing.T) {
 	kpsSvc := kps.NewService()
-	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "", 0, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
+	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "", keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -223,7 +223,7 @@ func TestIntegrationDestroyKey(t *testing.T) {
 
 func TestIntegrationAutoDestroy(t *testing.T) {
 	kpsSvc := kps.NewService()
-	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "test.sock", 0, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
+	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "test.sock", keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -267,7 +267,7 @@ func TestIntegrationAutoDestroy(t *testing.T) {
 
 func TestIntegrationKeyClaims(t *testing.T) {
 	kpsSvc := kps.NewService()
-	srv, err := NewServer(kpsSvc, &realWorkloadService{}, filepath.Join(t.TempDir(), "test.sock"), 0, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
+	srv, err := NewServer(kpsSvc, &realWorkloadService{}, filepath.Join(t.TempDir(), "test.sock"), keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -355,7 +355,7 @@ func TestIntegrationKeyClaims(t *testing.T) {
 
 func TestIntegrationKeyClaimsGRPC(t *testing.T) {
 	kpsSvc := kps.NewService()
-	srv, err := NewServer(kpsSvc, &realWorkloadService{}, filepath.Join(t.TempDir(), "test.sock"), 0, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
+	srv, err := NewServer(kpsSvc, &realWorkloadService{}, filepath.Join(t.TempDir(), "test.sock"), keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -389,7 +389,7 @@ func TestIntegrationKeyClaimsGRPC(t *testing.T) {
 	kemHandle := resp.KeyHandle.Handle
 
 	// Now test gRPC GetKeyClaims
-	conn, err := grpc.Dial(srv.keyClaimListener.Addr().String(), grpc.WithInsecure())
+	conn, err := grpc.Dial("unix://"+srv.grpcListener.Addr().String(), grpc.WithInsecure())
 	if err != nil {
 		t.Fatalf("failed to connect to gRPC server: %v", err)
 	}

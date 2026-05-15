@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -28,7 +29,6 @@ import (
 
 	kpskcc "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/key_custody_core"
 	kpspb "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/proto"
-	claimserver "github.com/GoogleCloudPlatform/key-protection-module/km_common/claimserver"
 	keymanager "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto"
 	wskcc "github.com/GoogleCloudPlatform/key-protection-module/workload_service/key_custody_core"
 	"google.golang.org/grpc"
@@ -302,6 +302,7 @@ func (r *remoteKeyProtectionService) GetKEMKey(ctx context.Context, id uuid.UUID
 
 // Server is the WSD HTTP server.
 type Server struct {
+	keymanager.UnimplementedKeyClaimsServiceServer
 	keyProtectionService KeyProtectionService
 	workloadService      WorkloadService
 	mu                   sync.RWMutex
@@ -309,9 +310,9 @@ type Server struct {
 	mode                 keymanager.KeyProtectionMechanism
 
 	httpServer       *http.Server
-	listener         net.Listener
-	keyClaimServer   *grpc.Server
-	keyClaimListener net.Listener
+	httpListener     net.Listener
+	grpcServer       *grpc.Server
+	grpcListener     net.Listener
 	conn             *grpc.ClientConn
 	heartbeatCancel  context.CancelFunc
 	initialBackoff   time.Duration
@@ -322,16 +323,10 @@ type Server struct {
 var (
 	// RPCTimeout is the maximum time to wait for remote KPS RPC calls.
 	RPCTimeout = 5 * time.Second
-	// KeyClaimPort is the TCP port used by the KeyClaims gRPC server in production.
-	KeyClaimPort = 50051
 )
 
-// New creates a new WSD Server listening on the given unix socket path, with an optional key claim port (default 50051).
-func New(_ context.Context, socketPath string, mode keymanager.KeyProtectionMechanism, kpsVMIP string, keyClaimPort ...int) (*Server, error) {
-	kcPort := KeyClaimPort
-	if len(keyClaimPort) > 0 {
-		kcPort = keyClaimPort[0]
-	}
+// New creates a new WSD Server listening on the given unix socket path.
+func New(_ context.Context, socketPath string, mode keymanager.KeyProtectionMechanism, kpsVMIP string) (*Server, error) {
 	var kps KeyProtectionService
 	var conn *grpc.ClientConn
 	switch mode {
@@ -362,7 +357,7 @@ func New(_ context.Context, socketPath string, mode keymanager.KeyProtectionMech
 	default:
 		return nil, fmt.Errorf("unknown key protection mechanism provided: %v", mode)
 	}
-	s, err := newServerWithPort(kps, &workloadService{}, socketPath, kcPort, mode)
+	s, err := newServerWithSocket(kps, &workloadService{}, socketPath, mode)
 	if err != nil {
 		if conn != nil {
 			_ = conn.Close()
@@ -374,11 +369,11 @@ func New(_ context.Context, socketPath string, mode keymanager.KeyProtectionMech
 }
 
 // NewServer creates a new WSD server with the given dependencies.
-func NewServer(keyProtectionService KeyProtectionService, workloadService WorkloadService, socketPath string, keyClaimPort int, mode keymanager.KeyProtectionMechanism) (*Server, error) {
-	return newServerWithPort(keyProtectionService, workloadService, socketPath, keyClaimPort, mode)
+func NewServer(keyProtectionService KeyProtectionService, workloadService WorkloadService, socketPath string, mode keymanager.KeyProtectionMechanism) (*Server, error) {
+	return newServerWithSocket(keyProtectionService, workloadService, socketPath, mode)
 }
 
-func newServerWithPort(keyProtectionService KeyProtectionService, workloadService WorkloadService, socketPath string, keyClaimPort int, mode keymanager.KeyProtectionMechanism) (*Server, error) {
+func newServerWithSocket(keyProtectionService KeyProtectionService, workloadService WorkloadService, socketPath string, mode keymanager.KeyProtectionMechanism) (*Server, error) {
 	s := &Server{
 		keyProtectionService: keyProtectionService,
 		workloadService:      workloadService,
@@ -402,15 +397,26 @@ func newServerWithPort(keyProtectionService KeyProtectionService, workloadServic
 	if err != nil {
 		return nil, fmt.Errorf("failed to listen on unix socket %s: %w", socketPath, err)
 	}
-	s.listener = ln
+	s.httpListener = ln
 
-	grpcSrv, grpcLis, err := claimserver.Start(s, keyClaimPort)
+	grpcSocketPath := strings.TrimSuffix(socketPath, filepath.Ext(socketPath)) + "-grpc.sock"
+	_ = os.Remove(grpcSocketPath)
+	grpcLis, err := net.Listen("unix", grpcSocketPath)
 	if err != nil {
 		_ = ln.Close()
-		return nil, fmt.Errorf("failed to start gRPC server: %w", err)
+		return nil, fmt.Errorf("failed to listen on gRPC unix socket %s: %w", grpcSocketPath, err)
 	}
-	s.keyClaimServer = grpcSrv
-	s.keyClaimListener = grpcLis
+
+	grpcSrv := grpc.NewServer()
+	keymanager.RegisterKeyClaimsServiceServer(grpcSrv, s)
+	go func() {
+		if err := grpcSrv.Serve(grpcLis); err != nil {
+			log.Printf("KeyClaims gRPC UDS server stopped: %v", err)
+		}
+	}()
+
+	s.grpcServer = grpcSrv
+	s.grpcListener = grpcLis
 
 	ctx, cancel := context.WithCancel(context.Background())
 	s.heartbeatCancel = cancel
@@ -421,13 +427,13 @@ func newServerWithPort(keyProtectionService KeyProtectionService, workloadServic
 
 // Serve starts the HTTP server listening on the given unix socket path.
 func (s *Server) Serve() error {
-	return s.httpServer.Serve(s.listener)
+	return s.httpServer.Serve(s.httpListener)
 }
 
 // Shutdown gracefully shuts down the server.
 func (s *Server) Shutdown(ctx context.Context) error {
-	if s.keyClaimServer != nil {
-		s.keyClaimServer.GracefulStop()
+	if s.grpcServer != nil {
+		s.grpcServer.GracefulStop()
 	}
 	if s.heartbeatCancel != nil {
 		s.heartbeatCancel()

@@ -30,12 +30,12 @@ import (
 )
 
 func newTestServer(t *testing.T, kemGen kps.KeyProtectionService, bindingGen WorkloadService) *Server {
-	srv, err := NewServer(kemGen, bindingGen, filepath.Join(t.TempDir(), "test.sock"), 0, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
+	srv, err := NewServer(kemGen, bindingGen, filepath.Join(t.TempDir(), "test.sock"), keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
 	if err != nil {
 		t.Fatalf("failed to create test server: %v", err)
 	}
 	t.Cleanup(func() {
-		_ = srv.listener.Close()
+		_ = srv.httpListener.Close()
 	})
 	return srv
 }

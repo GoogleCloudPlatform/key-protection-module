@@ -7,7 +7,6 @@ import (
 	"time"
 
 	kpsapi "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/proto"
-	claimserver "github.com/GoogleCloudPlatform/key-protection-module/km_common/claimserver"
 	keymanager "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -16,19 +15,13 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
-var (
-	// KeyClaimPort is the TCP port used by the KeyClaims gRPC server in production.
-	KeyClaimPort = 50051
-)
-
 // Server is the Key Protection Service gRPC server.
 type Server struct {
-	grpcServer       *grpc.Server
-	listener         net.Listener
-	keyClaimServer   *grpc.Server
-	keyClaimListener net.Listener
-	kps              KeyProtectionService
-	bootToken        string
+	keymanager.UnimplementedKeyClaimsServiceServer
+	grpcServer *grpc.Server
+	listener   net.Listener
+	kps        KeyProtectionService
+	bootToken  string
 }
 
 // GetKeyClaims implements claimserver.KeyClaimProvider for KEM keys.
@@ -67,21 +60,17 @@ func (s *Server) GetKeyClaims(ctx context.Context, req *keymanager.GetKeyClaimsR
 	}, nil
 }
 
-// NewServer creates a new KPS gRPC server listening on the given TCP port, with an optional key claim port (default 50051).
-func NewServer(port int, keyClaimPort ...int) (*Server, error) {
-	kcPort := KeyClaimPort
-	if len(keyClaimPort) > 0 {
-		kcPort = keyClaimPort[0]
-	}
-	return newServerWithPort(port, kcPort, NewService())
+// NewServer creates a new KPS gRPC server listening on the given TCP port.
+func NewServer(port int) (*Server, error) {
+	return newServerWithPort(port, NewService())
 }
 
-// newServerWithKPS creates a new KPS gRPC server with dynamic key claim port for testing.
-func newServerWithKPS(port int, keyClaimPort int, kps KeyProtectionService) (*Server, error) {
-	return newServerWithPort(port, keyClaimPort, kps)
+// newServerWithKPS creates a new KPS gRPC server for testing.
+func newServerWithKPS(port int, kps KeyProtectionService) (*Server, error) {
+	return newServerWithPort(port, kps)
 }
 
-func newServerWithPort(port int, keyClaimPort int, kps KeyProtectionService) (*Server, error) {
+func newServerWithPort(port int, kps KeyProtectionService) (*Server, error) {
 	addr := fmt.Sprintf(":%d", port)
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -102,14 +91,7 @@ func newServerWithPort(port int, keyClaimPort int, kps KeyProtectionService) (*S
 		bootToken:  bootToken,
 	}
 
-	keyClaimServer, keyClaimLis, err := claimserver.Start(s, keyClaimPort)
-	if err != nil {
-		_ = ln.Close()
-		return nil, fmt.Errorf("failed to start KeyClaims gRPC server: %w", err)
-	}
-
-	s.keyClaimServer = keyClaimServer
-	s.keyClaimListener = keyClaimLis
+	keymanager.RegisterKeyClaimsServiceServer(grpcServer, s)
 
 	return s, nil
 }
@@ -121,10 +103,6 @@ func (s *Server) Serve() error {
 
 // Shutdown gracefully shuts down the server.
 func (s *Server) Shutdown(ctx context.Context) error {
-	if s.keyClaimServer != nil {
-		s.keyClaimServer.GracefulStop()
-	}
-
 	shutdownDone := make(chan struct{})
 	go func() {
 		s.grpcServer.GracefulStop()
