@@ -1,5 +1,6 @@
 import os
 import base64
+import uuid
 import pytest
 import requests
 import requests_unixsocket
@@ -49,8 +50,11 @@ def key_handle(session):
 
     handle = data.get("key_handle", {}).get("handle")
     assert handle is not None
-    # Check if it looks like a UUID
-    assert len(handle) == 36
+    # Check if it looks like a valid UUID
+    try:
+        uuid.UUID(handle)
+    except ValueError:
+        pytest.fail(f"Handle is not a valid UUID: {handle}")
 
     # Return handle for other tests, and ensure cleanup afterwards
     yield handle
