@@ -51,7 +51,10 @@ func main() {
 
 func runWsd(ctx context.Context, socketPath string, mode keymanager.KeyProtectionMechanism, kpsVMIP string) error {
 	socketDir := filepath.Dir(socketPath)
-	if err := os.MkdirAll(socketDir, 0755); err != nil {
+	// We use 0755 permissions for the socket directory to allow cross-group access
+	// so that other workloads/containers running under different GIDs can traverse
+	// the directory to connect to the unix socket.
+	if err := os.MkdirAll(socketDir, 0755); err != nil { //nolint:gosec
 		return fmt.Errorf("failed to create directory for socket %s: %w", socketDir, err)
 	}
 

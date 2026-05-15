@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -43,6 +44,8 @@ const (
 	heartbeatTimeout      = 5 * time.Second
 	defaultInitialBackoff = 1 * time.Second
 	defaultMaxBackoff     = 128 * time.Second
+	// math.MaxInt64 nanoseconds is approx 292 years or 9223372036 seconds.
+	maxDurationSeconds = math.MaxInt64 / int64(time.Second)
 )
 
 // WorkloadService defines the interface for generating and managing binding keypairs.
@@ -109,7 +112,7 @@ type keyProtectionService struct{}
 // KeyProtectionService defines the interface for generating KEM keypairs.
 type KeyProtectionService interface {
 	GenerateKEMKeypair(ctx context.Context, algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
-	EnumerateKEMKeys(ctx context.Context, limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error)
+	EnumerateKEMKeys(ctx context.Context, limit, offset int32) ([]kpskcc.KEMKeyInfo, bool, error)
 	DestroyKEMKey(ctx context.Context, kemUUID uuid.UUID) error
 	GetKEMKey(ctx context.Context, id uuid.UUID) (kemPubKey []byte, bindingPubKey []byte, algo *keymanager.HpkeAlgorithm, deleteAfter uint64, err error)
 	DecapAndSeal(ctx context.Context, kemUUID uuid.UUID, encapsulatedKey, aad []byte) (sealEnc []byte, sealedCT []byte, err error)
@@ -151,7 +154,7 @@ func (r *keyProtectionService) GenerateKEMKeypair(_ context.Context, algo *keyma
 	return kpskcc.GenerateKEMKeypair(algo, bindingPubKey, lifespanSecs)
 }
 
-func (r *keyProtectionService) EnumerateKEMKeys(_ context.Context, limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
+func (r *keyProtectionService) EnumerateKEMKeys(_ context.Context, limit, offset int32) ([]kpskcc.KEMKeyInfo, bool, error) {
 	return kpskcc.EnumerateKEMKeys(limit, offset)
 }
 
@@ -231,10 +234,10 @@ func (r *remoteKeyProtectionService) GenerateKEMKeypair(ctx context.Context, alg
 	return id, resp.GetKemPubKey().GetPublicKey(), nil
 }
 
-func (r *remoteKeyProtectionService) EnumerateKEMKeys(ctx context.Context, limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
+func (r *remoteKeyProtectionService) EnumerateKEMKeys(ctx context.Context, limit, offset int32) ([]kpskcc.KEMKeyInfo, bool, error) {
 	req := &kpspb.EnumerateKEMKeysRequest{
-		Limit:  int32(limit),
-		Offset: int32(offset),
+		Limit:  limit,
+		Offset: offset,
 	}
 	ctx, cancel := context.WithTimeout(ctx, RPCTimeout)
 	defer cancel()
@@ -254,7 +257,7 @@ func (r *remoteKeyProtectionService) EnumerateKEMKeys(ctx context.Context, limit
 			ID:                    id,
 			Algorithm:             k.GetAlgorithm(),
 			KEMPubKey:             k.GetKemPubKey(),
-			RemainingLifespanSecs: k.RemainingLifespanSecs,
+			RemainingLifespanSecs: k.GetRemainingLifespanSecs(),
 		})
 	}
 	return keys, resp.GetHasMore(), nil
@@ -309,18 +312,22 @@ type Server struct {
 	kemToBindingMap      map[uuid.UUID]uuid.UUID
 	mode                 keymanager.KeyProtectionMechanism
 
-	httpServer       *http.Server
-	httpListener     net.Listener
-	grpcServer       *grpc.Server
-	grpcListener     net.Listener
-	conn             *grpc.ClientConn
-	heartbeatCancel  context.CancelFunc
-	initialBackoff   time.Duration
-	maxBackoff       time.Duration
+	httpServer      *http.Server
+	httpListener    net.Listener
+	grpcServer      *grpc.Server
+	grpcListener    net.Listener
+	conn            *grpc.ClientConn
+	heartbeatCancel context.CancelFunc
+	initialBackoff  time.Duration
+	maxBackoff      time.Duration
+	mechanism       keymanager.KeyProtectionMechanism
 	// todo: add logging mechanism here
 }
 
 var (
+	// WsdReadHeaderTimeout is the maximum time allowed to read HTTP request headers.
+	// It is set to mitigate Slowloris attacks.
+	WsdReadHeaderTimeout = 5 * time.Second
 	// RPCTimeout is the maximum time to wait for remote KPS RPC calls.
 	RPCTimeout = 5 * time.Second
 )
@@ -365,6 +372,7 @@ func New(_ context.Context, socketPath string, mode keymanager.KeyProtectionMech
 		return nil, err
 	}
 	s.conn = conn
+	s.mechanism = mode
 	return s, nil
 }
 
@@ -382,6 +390,7 @@ func newServerWithSocket(keyProtectionService KeyProtectionService, workloadServ
 		mode:                 mode,
 		initialBackoff:       defaultInitialBackoff,
 		maxBackoff:           defaultMaxBackoff,
+		mechanism:            keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED,
 	}
 
 	mux := http.NewServeMux()
@@ -390,7 +399,10 @@ func newServerWithSocket(keyProtectionService KeyProtectionService, workloadServ
 	mux.HandleFunc("GET /v1/capabilities", s.handleGetCapabilities)
 	mux.HandleFunc("GET /v1/keys", s.handleEnumerateKeys)
 	mux.HandleFunc("POST /v1/keys:destroy", s.handleDestroy)
-	s.httpServer = &http.Server{Handler: mux}
+	s.httpServer = &http.Server{
+		Handler:           mux,
+		ReadHeaderTimeout: WsdReadHeaderTimeout,
+	}
 
 	_ = os.Remove(socketPath)
 	ln, err := net.Listen("unix", socketPath)
@@ -409,11 +421,6 @@ func newServerWithSocket(keyProtectionService KeyProtectionService, workloadServ
 
 	grpcSrv := grpc.NewServer()
 	keymanager.RegisterKeyClaimsServiceServer(grpcSrv, s)
-	go func() {
-		if err := grpcSrv.Serve(grpcLis); err != nil {
-			log.Printf("KeyClaims gRPC UDS server stopped: %v", err)
-		}
-	}()
 
 	s.grpcServer = grpcSrv
 	s.grpcListener = grpcLis
@@ -427,18 +434,37 @@ func newServerWithSocket(keyProtectionService KeyProtectionService, workloadServ
 
 // Serve starts the HTTP server listening on the given unix socket path.
 func (s *Server) Serve() error {
-	return s.httpServer.Serve(s.httpListener)
+	go func() {
+		if err := s.grpcServer.Serve(s.grpcListener); err != nil {
+			log.Printf("KeyClaims gRPC UDS server stopped: %v", err)
+		}
+	}()
+	if err := s.httpServer.Serve(s.httpListener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return fmt.Errorf("failed to serve WSD server: %w", err)
+	}
+	return nil
 }
 
 // Shutdown gracefully shuts down the server.
 func (s *Server) Shutdown(ctx context.Context) error {
+	var errs []error
 	if s.grpcServer != nil {
-		s.grpcServer.GracefulStop()
+		shutdownDone := make(chan struct{})
+		go func() {
+			s.grpcServer.GracefulStop()
+			close(shutdownDone)
+		}()
+
+		select {
+		case <-ctx.Done():
+			s.grpcServer.Stop() // Force stop if context is cancelled
+			errs = append(errs, fmt.Errorf("WSD gRPC shutdown context cancelled: %w", ctx.Err()))
+		case <-shutdownDone:
+		}
 	}
 	if s.heartbeatCancel != nil {
 		s.heartbeatCancel()
 	}
-	var errs []error
 	if err := s.httpServer.Shutdown(ctx); err != nil {
 		errs = append(errs, err)
 	}
@@ -613,7 +639,7 @@ func (s *Server) generateKEMKey(w http.ResponseWriter, r *http.Request, req *api
 			},
 			PublicKey: kemPubKey,
 		},
-		KeyProtectionMechanism: keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String(),
+		KeyProtectionMechanism: s.mechanism.String(),
 		ExpirationTime:         float64(time.Now().Unix()) + float64(req.Lifespan),
 	}
 	writeJSON(w, &resp, http.StatusOK)
@@ -669,7 +695,7 @@ func (s *Server) handleEnumerateKeys(w http.ResponseWriter, r *http.Request) {
 				},
 				PublicKey: key.KEMPubKey,
 			},
-			KeyProtectionMechanism: keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String(),
+			KeyProtectionMechanism: s.mechanism.String(),
 			ExpirationTime:         float64(time.Now().Unix()) + float64(key.RemainingLifespanSecs),
 		})
 	}
@@ -807,7 +833,12 @@ func (s *Server) handleGetKEMKeyClaims(ctx context.Context, id uuid.UUID) (*keym
 	}
 
 	// Calculate remaining time.
-	remaining := time.Duration(remainingLifespanSecs) * time.Second
+	var remaining time.Duration
+	if remainingLifespanSecs > uint64(maxDurationSeconds) {
+		remaining = time.Duration(math.MaxInt64)
+	} else {
+		remaining = time.Duration(remainingLifespanSecs) * time.Second
+	}
 
 	// Create KeyClaims
 	claims := &keymanager.KeyClaims{

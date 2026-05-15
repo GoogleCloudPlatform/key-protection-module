@@ -85,7 +85,7 @@ func TestRunKPS(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Pick an available port
-	ln, err := net.Listen("tcp", ":0")
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("Failed to pick an available port: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestRunKPS(t *testing.T) {
 	}()
 
 	// Wait for the server to start by polling the port
-	addr := fmt.Sprintf(":%d", port)
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	started := false
 	for range pollAttempts {
 		conn, err := net.Dial("tcp", addr)

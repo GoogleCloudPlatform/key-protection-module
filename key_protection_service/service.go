@@ -59,7 +59,7 @@ type KeyProtectionService interface {
 	//   - []kpskcc.KEMKeyInfo: A slice of KEM key information structs.
 	//   - bool: True if there are more keys available.
 	//   - error: An error if the enumeration fails.
-	EnumerateKEMKeys(ctx context.Context, limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error)
+	EnumerateKEMKeys(ctx context.Context, limit, offset int32) ([]kpskcc.KEMKeyInfo, bool, error)
 
 	// DestroyKEMKey removes the specified KEM keypair from the active key registry.
 	// This prevents any future decapsulation operations using this key.
@@ -98,7 +98,7 @@ func (d *defaultKPS) DecapAndSeal(_ context.Context, kemUUID uuid.UUID, encapsul
 	return kpskcc.DecapAndSeal(kemUUID, encapsulatedKey, aad)
 }
 
-func (d *defaultKPS) EnumerateKEMKeys(_ context.Context, limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
+func (d *defaultKPS) EnumerateKEMKeys(_ context.Context, limit, offset int32) ([]kpskcc.KEMKeyInfo, bool, error) {
 	return kpskcc.EnumerateKEMKeys(limit, offset)
 }
 
@@ -146,7 +146,7 @@ func (s *Service) DecapAndSeal(ctx context.Context, kemUUID uuid.UUID, encapsula
 }
 
 // EnumerateKEMKeys enumerates active KEM keys up to limit by offset calling the underlying KPS.
-func (s *Service) EnumerateKEMKeys(ctx context.Context, limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
+func (s *Service) EnumerateKEMKeys(ctx context.Context, limit, offset int32) ([]kpskcc.KEMKeyInfo, bool, error) {
 	return s.kps.EnumerateKEMKeys(ctx, limit, offset)
 }
 

@@ -4,14 +4,13 @@ package workloadservice
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
 	"time"
-
-	"context"
 
 	api "github.com/GoogleCloudPlatform/key-protection-module/workload_service/proto"
 	"github.com/google/uuid"
@@ -55,7 +54,7 @@ func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
-	t.Cleanup(func() { srv.Shutdown(context.Background()) })
+	t.Cleanup(func() { _ = srv.Shutdown(context.Background()) })
 
 	reqBody, err := protojson.MarshalOptions{EmitUnpopulated: true, UseProtoNames: true}.Marshal(&api.GenerateKeyRequest{
 		Algorithm: &keymanager.AlgorithmDetails{Type: "kem", Params: &keymanager.AlgorithmParams{Params: &keymanager.AlgorithmParams_KemId{KemId: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256}}},
@@ -104,7 +103,7 @@ func TestIntegrationGenerateKeysUniqueMappings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
-	t.Cleanup(func() { srv.Shutdown(context.Background()) })
+	t.Cleanup(func() { _ = srv.Shutdown(context.Background()) })
 
 	// Generate two key sets.
 	var kemUUIDs [2]uuid.UUID
@@ -158,7 +157,7 @@ func TestIntegrationDestroyKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
-	t.Cleanup(func() { srv.Shutdown(context.Background()) })
+	t.Cleanup(func() { _ = srv.Shutdown(context.Background()) })
 
 	// 1. Generate a key first
 	reqBody, _ := protojson.MarshalOptions{EmitUnpopulated: true, UseProtoNames: true}.Marshal(&api.GenerateKeyRequest{
@@ -227,7 +226,7 @@ func TestIntegrationAutoDestroy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
-	t.Cleanup(func() { srv.Shutdown(context.Background()) })
+	t.Cleanup(func() { _ = srv.Shutdown(context.Background()) })
 
 	// 1. Generate a key with 1-second lifespan
 	reqBody, _ := protojson.MarshalOptions{EmitUnpopulated: true, UseProtoNames: true}.Marshal(&api.GenerateKeyRequest{
@@ -272,7 +271,7 @@ func TestIntegrationKeyClaims(t *testing.T) {
 		t.Fatalf("failed to create server: %v", err)
 	}
 	t.Cleanup(func() {
-		srv.Shutdown(context.Background())
+		_ = srv.Shutdown(context.Background())
 	})
 
 	// 1. Generate a KEM key

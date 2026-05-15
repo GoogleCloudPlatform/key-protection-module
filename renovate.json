@@ -1,6 +1,13 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:recommended"
-  ]
+    "config:recommended",
+    "group:allNonMajor",
+    ":enableLockFileMaintenance",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "groupName": "all-non-major-dependencies",
+  "groupSlug": "all-minor-patch-updates",
+  "prCreation": "not-pending",
+  "schedule": ["before 5am on Monday"]
 }

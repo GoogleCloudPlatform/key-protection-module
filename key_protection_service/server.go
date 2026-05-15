@@ -3,6 +3,7 @@ package keyprotectionservice
 import (
 	"context"
 	"fmt"
+	"math"
 	"net"
 	"time"
 
@@ -15,6 +16,11 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
+const (
+	// math.MaxInt64 nanoseconds is approx 292 years or 9223372036 seconds.
+	maxDurationSeconds = math.MaxInt64 / int64(time.Second)
+)
+
 // Server is the Key Protection Service gRPC server.
 type Server struct {
 	keymanager.UnimplementedKeyClaimsServiceServer
@@ -24,7 +30,7 @@ type Server struct {
 	bootToken  string
 }
 
-// GetKeyClaims implements claimserver.KeyClaimProvider for KEM keys.
+// GetKeyClaims implements keymanager.KeyClaimsServiceServer for KEM keys.
 func (s *Server) GetKeyClaims(ctx context.Context, req *keymanager.GetKeyClaimsRequest) (*keymanager.KeyClaims, error) {
 	if req.GetKeyType() != keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY {
 		return nil, status.Errorf(codes.InvalidArgument, "unsupported key type for KPS key claims: %v", req.GetKeyType())
@@ -40,7 +46,12 @@ func (s *Server) GetKeyClaims(ctx context.Context, req *keymanager.GetKeyClaimsR
 		return nil, status.Errorf(grpcCodeFromError(err), "failed to get KEM key: %v", err)
 	}
 
-	remaining := time.Duration(lifespan) * time.Second
+	var remaining time.Duration
+	if lifespan > uint64(maxDurationSeconds) {
+		remaining = time.Duration(math.MaxInt64)
+	} else {
+		remaining = time.Duration(lifespan) * time.Second
+	}
 
 	return &keymanager.KeyClaims{
 		Claims: &keymanager.KeyClaims_VmKeyClaims{
@@ -65,7 +76,7 @@ func NewServer(port int) (*Server, error) {
 	return newServerWithPort(port, NewService())
 }
 
-// newServerWithKPS creates a new KPS gRPC server for testing.
+// newServerWithKPS creates a new KPS gRPC server with the given dependencies.
 func newServerWithKPS(port int, kps KeyProtectionService) (*Server, error) {
 	return newServerWithPort(port, kps)
 }
@@ -98,7 +109,10 @@ func newServerWithPort(port int, kps KeyProtectionService) (*Server, error) {
 
 // Serve starts the gRPC server listening on the given port.
 func (s *Server) Serve() error {
-	return s.grpcServer.Serve(s.listener)
+	if err := s.grpcServer.Serve(s.listener); err != nil {
+		return fmt.Errorf("failed to serve KPS gRPC server: %w", err)
+	}
+	return nil
 }
 
 // Shutdown gracefully shuts down the server.
@@ -112,7 +126,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		s.grpcServer.Stop() // Force stop if context is cancelled
-		return ctx.Err()
+		return fmt.Errorf("KPS gRPC shutdown context cancelled: %w", ctx.Err())
 	case <-shutdownDone:
 		return nil
 	}

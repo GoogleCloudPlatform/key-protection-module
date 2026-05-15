@@ -74,7 +74,7 @@ func GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, li
 
 // EnumerateKEMKeys retrieves active KEM key entries from the Rust KCC registry with pagination.
 // Returns a list of keys and a boolean indicating if there are more keys to fetch.
-func EnumerateKEMKeys(limit, offset int) ([]KEMKeyInfo, bool, error) {
+func EnumerateKEMKeys(limit, offset int32) ([]KEMKeyInfo, bool, error) {
 	if limit <= 0 {
 		return nil, false, fmt.Errorf("limit must be positive")
 	}
