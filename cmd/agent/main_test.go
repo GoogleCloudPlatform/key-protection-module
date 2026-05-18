@@ -85,7 +85,7 @@ func TestRunKPS(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Pick an available port
-	ln, err := net.Listen("tcp", ":0")
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("Failed to pick an available port: %v", err)
 	}
@@ -94,11 +94,11 @@ func TestRunKPS(t *testing.T) {
 
 	errChan := make(chan error, 1)
 	go func() {
-		errChan <- runKps(ctx, port)
+		errChan <- runKps(ctx, port, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM, keymanager.ServiceRole_SERVICE_ROLE_KPS)
 	}()
 
 	// Wait for the server to start by polling the port
-	addr := fmt.Sprintf(":%d", port)
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	started := false
 	for range pollAttempts {
 		conn, err := net.Dial("tcp", addr)
@@ -132,7 +132,7 @@ func TestRunKPS_InvalidPort(t *testing.T) {
 	ctx := context.Background()
 
 	// Use an impossible port
-	err := runKps(ctx, -1)
+	err := runKps(ctx, -1, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM, keymanager.ServiceRole_SERVICE_ROLE_KPS)
 	if err == nil {
 		t.Fatal("Expected runKps() to return an error for invalid port")
 	}

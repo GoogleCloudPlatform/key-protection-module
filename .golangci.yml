@@ -1,0 +1,54 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+run:
+  timeout: 5m
+  issues-exit-code: 1
+  tests: true
+
+linters:
+  disable-all: true
+  enable:
+    - stylecheck
+    - goimports
+    - misspell
+    - revive
+    - gofmt
+    - gosec
+    - exhaustive
+    - nilerr
+    - wrapcheck
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+
+linters-settings:
+
+  exhaustive:
+    # Check switch statements for exhaustiveness
+    default-signifies-exhaustive: true
+  wrapcheck:
+    # Wrapcheck checks that errors returned from external packages are wrapped.
+    # We should configure it to ignore internal packages if they are not external.
+    # By default it checks errors from outside the package.
+    ignorePackageGlobs:
+      - "github.com/GoogleCloudPlatform/key-protection-module/*"
+
+issues:
+  exclude-use-default: false
+  max-same-issues: 0
+  max-issues-per-linter: 0

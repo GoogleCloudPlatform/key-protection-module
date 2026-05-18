@@ -39,7 +39,7 @@ func main() {
 
 	var err error
 	if mode == keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM && role == keymanager.ServiceRole_SERVICE_ROLE_KPS {
-		err = runKps(ctx, *kpsPort)
+		err = runKps(ctx, *kpsPort, mode, role)
 	} else {
 		err = runWsd(ctx, *socketPath, mode, *kpsVMIP)
 	}
@@ -51,7 +51,10 @@ func main() {
 
 func runWsd(ctx context.Context, socketPath string, mode keymanager.KeyProtectionMechanism, kpsVMIP string) error {
 	socketDir := filepath.Dir(socketPath)
-	if err := os.MkdirAll(socketDir, 0755); err != nil {
+	// We use 0755 permissions for the socket directory to allow cross-group access
+	// so that other workloads/containers running under different GIDs can traverse
+	// the directory to connect to the unix socket.
+	if err := os.MkdirAll(socketDir, 0755); err != nil { //nolint:gosec
 		return fmt.Errorf("failed to create directory for socket %s: %w", socketDir, err)
 	}
 
@@ -82,9 +85,9 @@ func runWsd(ctx context.Context, socketPath string, mode keymanager.KeyProtectio
 	}
 }
 
-func runKps(ctx context.Context, port int) error {
+func runKps(ctx context.Context, port int, mode keymanager.KeyProtectionMechanism, role keymanager.ServiceRole) error {
 	log.Printf("Initializing Key Protection Service on TCP port %d", port)
-	srv, err := keyprotectionservice.NewServer(port)
+	srv, err := keyprotectionservice.NewServer(port, mode, role)
 	if err != nil {
 		return fmt.Errorf("failed to create KPS server: %w", err)
 	}

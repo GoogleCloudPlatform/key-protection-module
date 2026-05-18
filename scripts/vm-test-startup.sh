@@ -88,7 +88,7 @@ echo "Starting container..."
 set +e
 if [ -n "$TEST_COMMAND" ]; then
   echo "Running custom test command: $TEST_COMMAND"
-  docker run --rm --security-opt seccomp=unconfined --entrypoint /bin/bash "$IMAGE" -c "$TEST_COMMAND"
+  docker run --rm --security-opt seccomp=unconfined "${ENV_ARGS[@]}" --entrypoint /bin/bash "$IMAGE" -c "$TEST_COMMAND"
 else
   docker run --rm --security-opt seccomp=unconfined "${ENV_ARGS[@]}" "${EXTRA_ARGS[@]}" "$IMAGE"
 fi

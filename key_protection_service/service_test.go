@@ -16,7 +16,7 @@ import (
 type mockKPS struct {
 	generateKEMKeypairFn func(ctx context.Context, algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
 	decapAndSealFn       func(ctx context.Context, kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error)
-	enumerateKEMKeysFn   func(ctx context.Context, limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error)
+	enumerateKEMKeysFn   func(ctx context.Context, limit, offset int32) ([]kpskcc.KEMKeyInfo, bool, error)
 	destroyKEMKeyFn      func(ctx context.Context, kemUUID uuid.UUID) error
 	GetKEMKeyFn          func(ctx context.Context, id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error)
 }
@@ -28,7 +28,7 @@ func (m *mockKPS) GenerateKEMKeypair(ctx context.Context, algo *keymanager.HpkeA
 	return uuid.Nil, nil, nil
 }
 
-func (m *mockKPS) EnumerateKEMKeys(ctx context.Context, limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
+func (m *mockKPS) EnumerateKEMKeys(ctx context.Context, limit, offset int32) ([]kpskcc.KEMKeyInfo, bool, error) {
 	if m.enumerateKEMKeysFn != nil {
 		return m.enumerateKEMKeysFn(ctx, limit, offset)
 	}
@@ -116,7 +116,7 @@ func TestServiceEnumerateKEMKeysSuccess(t *testing.T) {
 	}
 
 	mock := &mockKPS{
-		enumerateKEMKeysFn: func(_ context.Context, limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
+		enumerateKEMKeysFn: func(_ context.Context, limit, offset int32) ([]kpskcc.KEMKeyInfo, bool, error) {
 			if limit != 100 || offset != 0 {
 				return nil, false, fmt.Errorf("unexpected limit/offset: %d/%d", limit, offset)
 			}
@@ -147,7 +147,7 @@ func TestServiceEnumerateKEMKeysSuccess(t *testing.T) {
 
 func TestServiceEnumerateKEMKeysError(t *testing.T) {
 	mock := &mockKPS{
-		enumerateKEMKeysFn: func(_ context.Context, _, _ int) ([]kpskcc.KEMKeyInfo, bool, error) {
+		enumerateKEMKeysFn: func(_ context.Context, _, _ int32) ([]kpskcc.KEMKeyInfo, bool, error) {
 			return nil, false, fmt.Errorf("enumerate error")
 		},
 	}
