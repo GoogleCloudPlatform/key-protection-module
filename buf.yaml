@@ -5,6 +5,7 @@ modules:
       - keymanager/attestation_service/proto # excluding since this has a dynamic dependency on go-tpm-tools
 deps:
   - buf.build/bufbuild/protovalidate
+  - buf.build/googleapis/googleapis
 lint:
   except:
     - PACKAGE_DIRECTORY_MATCH

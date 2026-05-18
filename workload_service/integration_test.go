@@ -12,16 +12,17 @@ import (
 	"testing"
 	"time"
 
-	api "github.com/GoogleCloudPlatform/key-protection-module/workload_service/proto"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	kps "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service"
 	keymanager "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto"
 	wskcc "github.com/GoogleCloudPlatform/key-protection-module/workload_service/key_custody_core"
+	api "github.com/GoogleCloudPlatform/key-protection-module/workload_service/proto"
 )
 
 const expirationToleranceSecs = 5.0
@@ -52,7 +53,7 @@ func (r *realWorkloadService) DestroyAllKeys() error {
 func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
 	// Wire up real FFI calls: WSD KCC for binding, KPS KCC (via KPS KOL) for KEM.
 	kpsSvc := kps.NewService()
-	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "test.sock", keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
+	srv, err := NewServer(kpsSvc, &realWorkloadService{}, filepath.Join(t.TempDir(), "test.sock"), keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -101,7 +102,7 @@ func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
 
 func TestIntegrationGenerateKeysUniqueMappings(t *testing.T) {
 	kpsSvc := kps.NewService()
-	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "test.sock", keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
+	srv, err := NewServer(kpsSvc, &realWorkloadService{}, filepath.Join(t.TempDir(), "test.sock"), keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -155,7 +156,7 @@ func TestIntegrationGenerateKeysUniqueMappings(t *testing.T) {
 
 func TestIntegrationDestroyKey(t *testing.T) {
 	kpsSvc := kps.NewService()
-	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "", keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
+	srv, err := NewServer(kpsSvc, &realWorkloadService{}, filepath.Join(t.TempDir(), "test.sock"), keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -179,7 +180,7 @@ func TestIntegrationDestroyKey(t *testing.T) {
 	if err := json.NewDecoder(wGen.Body).Decode(&respGen); err != nil {
 		t.Fatalf("setup: failed to decode generate response: %v", err)
 	}
-	kemHandle := respGen.KeyHandle.Handle
+	kemHandle := respGen.KeyHandle.GetHandle()
 	kemUUID, err := uuid.Parse(kemHandle)
 	if err != nil {
 		t.Fatalf("setup: invalid KEM UUID: %v", err)
@@ -200,8 +201,8 @@ func TestIntegrationDestroyKey(t *testing.T) {
 	wDestroy := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(wDestroy, reqDestroy)
 
-	if wDestroy.Code != http.StatusNoContent {
-		t.Fatalf("expected destroy status 204, got %d: %s", wDestroy.Code, wDestroy.Body.String())
+	if wDestroy.Code != http.StatusOK {
+		t.Fatalf("expected destroy status 200, got %d: %s", wDestroy.Code, wDestroy.Body.String())
 	}
 
 	// 3. Verify mapping is gone
@@ -224,7 +225,7 @@ func TestIntegrationDestroyKey(t *testing.T) {
 
 func TestIntegrationAutoDestroy(t *testing.T) {
 	kpsSvc := kps.NewService()
-	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "test.sock", keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
+	srv, err := NewServer(kpsSvc, &realWorkloadService{}, filepath.Join(t.TempDir(), "test.sock"), keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -246,7 +247,7 @@ func TestIntegrationAutoDestroy(t *testing.T) {
 
 	var respGen api.GenerateKeyResponse
 	json.NewDecoder(wGen.Body).Decode(&respGen)
-	kemHandle := respGen.KeyHandle.Handle
+	kemHandle := respGen.KeyHandle.GetHandle()
 
 	// Wait for auto-destroy
 	time.Sleep(2 * time.Second)
@@ -261,8 +262,8 @@ func TestIntegrationAutoDestroy(t *testing.T) {
 	srv.Handler().ServeHTTP(wDestroy, reqDestroy)
 
 	// In the real system, it gracefully handles destruction and cleans up the KOL mapping.
-	if wDestroy.Code != http.StatusNoContent {
-		t.Fatalf("expected destroy status 204 or some success, got %d: %s", wDestroy.Code, wDestroy.Body.String())
+	if wDestroy.Code != http.StatusOK {
+		t.Fatalf("expected destroy status 200 or some success, got %d: %s", wDestroy.Code, wDestroy.Body.String())
 	}
 }
 
@@ -397,7 +398,7 @@ func TestIntegrationKeyClaimsGRPC(t *testing.T) {
 			kemHandle := resp.KeyHandle.Handle
 
 			// Now test gRPC GetKeyClaims
-			conn, err := grpc.Dial("unix://"+srv.grpcListener.Addr().String(), grpc.WithInsecure())
+			conn, err := grpc.NewClient("unix://"+srv.grpcListener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 			if err != nil {
 				t.Fatalf("failed to connect to gRPC server: %v", err)
 			}
