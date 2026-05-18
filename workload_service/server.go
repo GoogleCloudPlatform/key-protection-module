@@ -364,7 +364,7 @@ func New(_ context.Context, socketPath string, mode keymanager.KeyProtectionMech
 	default:
 		return nil, fmt.Errorf("unknown key protection mechanism provided: %v", mode)
 	}
-	s, err := newServerWithSocket(kps, &workloadService{}, socketPath, mode)
+	s, err := NewServer(kps, &workloadService{}, socketPath, mode)
 	if err != nil {
 		if conn != nil {
 			_ = conn.Close()
@@ -378,10 +378,6 @@ func New(_ context.Context, socketPath string, mode keymanager.KeyProtectionMech
 
 // NewServer creates a new WSD server with the given dependencies.
 func NewServer(keyProtectionService KeyProtectionService, workloadService WorkloadService, socketPath string, mode keymanager.KeyProtectionMechanism) (*Server, error) {
-	return newServerWithSocket(keyProtectionService, workloadService, socketPath, mode)
-}
-
-func newServerWithSocket(keyProtectionService KeyProtectionService, workloadService WorkloadService, socketPath string, mode keymanager.KeyProtectionMechanism) (*Server, error) {
 	s := &Server{
 		keyProtectionService: keyProtectionService,
 		workloadService:      workloadService,
@@ -436,7 +432,7 @@ func newServerWithSocket(keyProtectionService KeyProtectionService, workloadServ
 func (s *Server) Serve() error {
 	go func() {
 		if err := s.grpcServer.Serve(s.grpcListener); err != nil {
-			log.Printf("KeyClaims gRPC UDS server stopped: %v", err)
+			log.Printf("failed to serve WSD grpc server: %v", err)
 		}
 	}()
 	if err := s.httpServer.Serve(s.httpListener); err != nil && !errors.Is(err, http.ErrServerClosed) {

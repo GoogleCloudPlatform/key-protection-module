@@ -28,10 +28,16 @@ type Server struct {
 	listener   net.Listener
 	kps        KeyProtectionService
 	bootToken  string
+	mode       keymanager.KeyProtectionMechanism
+	role       keymanager.ServiceRole
 }
 
 // GetKeyClaims implements keymanager.KeyClaimsServiceServer for KEM keys.
 func (s *Server) GetKeyClaims(ctx context.Context, req *keymanager.GetKeyClaimsRequest) (*keymanager.KeyClaims, error) {
+	if s.mode != keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM || s.role != keymanager.ServiceRole_SERVICE_ROLE_KPS {
+		return nil, status.Errorf(codes.PermissionDenied, "KEM key claims can only be retrieved from KPS VM in KEY_PROTECTION_VM mode and SERVICE_ROLE_KPS role")
+	}
+
 	if req.GetKeyType() != keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY {
 		return nil, status.Errorf(codes.InvalidArgument, "unsupported key type for KPS key claims: %v", req.GetKeyType())
 	}
@@ -72,16 +78,12 @@ func (s *Server) GetKeyClaims(ctx context.Context, req *keymanager.GetKeyClaimsR
 }
 
 // NewServer creates a new KPS gRPC server listening on the given TCP port.
-func NewServer(port int) (*Server, error) {
-	return newServerWithPort(port, NewService())
+func NewServer(port int, mode keymanager.KeyProtectionMechanism, role keymanager.ServiceRole) (*Server, error) {
+	return newServerWithKPS(port, NewService(), mode, role)
 }
 
 // newServerWithKPS creates a new KPS gRPC server with the given dependencies.
-func newServerWithKPS(port int, kps KeyProtectionService) (*Server, error) {
-	return newServerWithPort(port, kps)
-}
-
-func newServerWithPort(port int, kps KeyProtectionService) (*Server, error) {
+func newServerWithKPS(port int, kps KeyProtectionService, mode keymanager.KeyProtectionMechanism, role keymanager.ServiceRole) (*Server, error) {
 	addr := fmt.Sprintf(":%d", port)
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -100,6 +102,8 @@ func newServerWithPort(port int, kps KeyProtectionService) (*Server, error) {
 		listener:   ln,
 		kps:        kps,
 		bootToken:  bootToken,
+		mode:       mode,
+		role:       role,
 	}
 
 	keymanager.RegisterKeyClaimsServiceServer(grpcServer, s)

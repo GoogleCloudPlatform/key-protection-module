@@ -17,7 +17,10 @@ import (
 
 func TestServerRunAndShutdown(t *testing.T) {
 	// Let the OS pick an available port
-	srv, err := newServerWithKPS(0, NewService())
+	srv, err := newServerWithKPS(0, NewService(),
+		keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM,
+		keymanager.ServiceRole_SERVICE_ROLE_KPS,
+	)
 	if err != nil {
 		t.Fatalf("Failed to create KPS server: %v", err)
 	}
@@ -58,7 +61,8 @@ func TestServerRunAndShutdown(t *testing.T) {
 func TestServerInvalidPort(t *testing.T) {
 	// Try to start on a system/reserved port that we likely cannot bind to, or invalid port string
 	// Passing an invalid port like -1 causes net.Listen to fail
-	_, err := NewServer(-1)
+	_, err := NewServer(-1, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM,
+		keymanager.ServiceRole_SERVICE_ROLE_KPS)
 	if err == nil {
 		t.Fatal("Expected NewServer() to return an error for invalid port -1")
 	}
@@ -67,7 +71,10 @@ func TestServerInvalidPort(t *testing.T) {
 func TestServerGRPCRegistration(t *testing.T) {
 	mock := &mockKPS{}
 
-	srv, err := newServerWithKPS(0, mock)
+	srv, err := newServerWithKPS(0, mock,
+		keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM,
+		keymanager.ServiceRole_SERVICE_ROLE_KPS,
+	)
 	if err != nil {
 		t.Fatalf("failed to create KPS server: %v", err)
 	}
@@ -102,7 +109,10 @@ func TestServerGRPCRegistration(t *testing.T) {
 func TestServerHeartbeat(t *testing.T) {
 	mock := &mockKPS{}
 
-	srv, err := newServerWithKPS(0, mock)
+	srv, err := newServerWithKPS(0, mock,
+		keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM,
+		keymanager.ServiceRole_SERVICE_ROLE_KPS,
+	)
 	if err != nil {
 		t.Fatalf("failed to create KPS server: %v", err)
 	}
@@ -156,7 +166,10 @@ func TestServerGetKeyClaims(t *testing.T) {
 		},
 	}
 
-	srv, err := newServerWithKPS(0, mock)
+	srv, err := newServerWithKPS(0, mock,
+		keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM,
+		keymanager.ServiceRole_SERVICE_ROLE_KPS,
+	)
 	if err != nil {
 		t.Fatalf("failed to create KPS server: %v", err)
 	}
@@ -261,6 +274,46 @@ func TestServerGetKeyClaims(t *testing.T) {
 		st, ok := status.FromError(err)
 		if !ok || st.Code() != codes.NotFound {
 			t.Fatalf("expected NotFound code, got %v", err)
+		}
+	})
+
+	t.Run("WrongMode", func(t *testing.T) {
+		srv.mode = keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED
+		defer func() { srv.mode = keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM }()
+
+		req := &keymanager.GetKeyClaimsRequest{
+			KeyHandle: &keymanager.KeyHandle{Handle: kemUUID.String()},
+			KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
+		}
+
+		_, err := client.GetKeyClaims(context.Background(), req)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+
+		st, ok := status.FromError(err)
+		if !ok || st.Code() != codes.PermissionDenied {
+			t.Fatalf("expected PermissionDenied code, got %v", err)
+		}
+	})
+
+	t.Run("WrongRole", func(t *testing.T) {
+		srv.role = keymanager.ServiceRole_SERVICE_ROLE_WSD
+		defer func() { srv.role = keymanager.ServiceRole_SERVICE_ROLE_KPS }()
+
+		req := &keymanager.GetKeyClaimsRequest{
+			KeyHandle: &keymanager.KeyHandle{Handle: kemUUID.String()},
+			KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
+		}
+
+		_, err := client.GetKeyClaims(context.Background(), req)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+
+		st, ok := status.FromError(err)
+		if !ok || st.Code() != codes.PermissionDenied {
+			t.Fatalf("expected PermissionDenied code, got %v", err)
 		}
 	})
 }
