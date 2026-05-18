@@ -6,8 +6,14 @@
     ":enableLockFileMaintenance",
     "helpers:pinGitHubActionDigests"
   ],
-  "groupName": "all-non-major-dependencies",
-  "groupSlug": "all-minor-patch-updates",
+  "packageRules": [
+    {
+      "matchPackageNames": ["*"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "all-non-major-dependencies",
+      "groupSlug": "all-minor-patch-updates"
+    }
+  ],
   "prCreation": "not-pending",
   "schedule": ["before 5am on Monday"]
 }
