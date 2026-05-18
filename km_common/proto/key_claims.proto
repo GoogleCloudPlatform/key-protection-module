@@ -64,3 +64,9 @@ message KeyClaims {
     VmProtectionKeyClaims vm_key_claims = 2;
   }
 }
+
+// Service for retrieving key claims.
+service KeyClaimsService {
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  rpc GetKeyClaims(GetKeyClaimsRequest) returns (KeyClaims);
+}

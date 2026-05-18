@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -62,13 +63,12 @@ func TestIntegrationGRPC_EndToEnd(t *testing.T) {
 	// 7. Start the WSD HTTP server (using the remoteKeyProtectionService)
 	// We use a mock WorkloadService since this test focuses on KPS integration.
 	mockWsd := &mockWorkloadService{uuid: uuid.New(), pubKey: []byte("thirty-two-bytes-of-dummy-pubkey")}
-	wsdServer, err := NewServer(remoteKps, mockWsd, filepath.Join(t.TempDir(), "test.sock"))
+	wsdServer, err := NewServer(remoteKps, mockWsd, filepath.Join(t.TempDir(), "test.sock"), keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
 	if err != nil {
 		t.Fatalf("failed to create wsd server: %v", err)
 	}
 	defer func() {
-		_ = wsdServer.listener.Close()
-		close(wsdServer.claimsChan)
+		_ = wsdServer.Shutdown(context.Background())
 	}()
 
 	ts := httptest.NewServer(wsdServer.Handler())
@@ -195,7 +195,7 @@ func (s *stubKPS) DecapAndSeal(_ context.Context, _ uuid.UUID, _, _ []byte) ([]b
 	}
 	return nil, nil, nil
 }
-func (s *stubKPS) EnumerateKEMKeys(_ context.Context, _, _ int) ([]kpskcc.KEMKeyInfo, bool, error) {
+func (s *stubKPS) EnumerateKEMKeys(_ context.Context, _, _ int32) ([]kpskcc.KEMKeyInfo, bool, error) {
 	if s.enumerateErr != nil {
 		return nil, false, s.enumerateErr
 	}
@@ -245,13 +245,12 @@ func setupGRPCRoundTrip(t *testing.T, stub kps.KeyProtectionService, kemUUID uui
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(sockDir) })
 
-	wsdServer, err := NewServer(remoteKps, mockWsd, filepath.Join(sockDir, "s"))
+	wsdServer, err := NewServer(remoteKps, mockWsd, filepath.Join(sockDir, "s"), keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
 	if err != nil {
 		t.Fatalf("failed to create wsd server: %v", err)
 	}
 	t.Cleanup(func() {
-		_ = wsdServer.listener.Close()
-		close(wsdServer.claimsChan)
+		_ = wsdServer.Shutdown(context.Background())
 	})
 
 	if kemUUID != uuid.Nil {
@@ -409,7 +408,7 @@ func (f *fakeKPSClient) GenerateKEMKeypair(ctx context.Context, _ *kpspb.Generat
 		select {
 		case <-time.After(f.delay):
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, fmt.Errorf("context error: %w", ctx.Err())
 		}
 	}
 	return f.generateResp, f.generateErr

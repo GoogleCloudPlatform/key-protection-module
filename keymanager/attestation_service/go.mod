@@ -54,3 +54,5 @@ require (
 )
 
 replace github.com/google/go-tpm-tools/verifier => github.com/google/go-tpm-tools/verifier v0.0.0-20260424173438-cf6db90d8918
+
+replace github.com/GoogleCloudPlatform/key-protection-module => ../../

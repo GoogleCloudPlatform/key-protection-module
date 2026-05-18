@@ -32,6 +32,7 @@ jobs:
   release:
     permissions:
       contents: write
+      id-token: write
     strategy:
       matrix:
         go-version: [1.24.x]

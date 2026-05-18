@@ -101,7 +101,7 @@ func (s *grpcServer) DecapAndSeal(ctx context.Context, req *kpspb.DecapAndSealRe
 
 // EnumerateKEMKeys enumerates active KEM keys.
 func (s *grpcServer) EnumerateKEMKeys(ctx context.Context, req *kpspb.EnumerateKEMKeysRequest) (*kpspb.EnumerateKEMKeysResponse, error) {
-	keys, hasMore, err := s.svc.EnumerateKEMKeys(ctx, int(req.GetLimit()), int(req.GetOffset()))
+	keys, hasMore, err := s.svc.EnumerateKEMKeys(ctx, req.GetLimit(), req.GetOffset())
 	if err != nil {
 		return nil, status.Errorf(grpcCodeFromError(err), "failed to enumerate KEM keys: %v", err)
 	}
