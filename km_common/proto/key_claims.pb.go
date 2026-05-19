@@ -468,7 +468,9 @@ const file_km_common_proto_key_claims_proto_rawDesc = "" +
 	"\aKeyType\x12\x18\n" +
 	"\x14KEY_TYPE_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eKEY_TYPE_VM_PROTECTION_BINDING\x10\x01\x12\x1e\n" +
-	"\x1aKEY_TYPE_VM_PROTECTION_KEY\x10\x02BQZOgithub.com/GoogleCloudPlatform/key-protection-module/km_common/proto;keymanagerb\x06proto3"
+	"\x1aKEY_TYPE_VM_PROTECTION_KEY\x10\x022Z\n" +
+	"\x10KeyClaimsService\x12F\n" +
+	"\fGetKeyClaims\x12\x1f.keymanager.GetKeyClaimsRequest\x1a\x15.keymanager.KeyClaimsBQZOgithub.com/GoogleCloudPlatform/key-protection-module/km_common/proto;keymanagerb\x06proto3"
 
 var (
 	file_km_common_proto_key_claims_proto_rawDescOnce sync.Once
@@ -508,8 +510,10 @@ var file_km_common_proto_key_claims_proto_depIdxs = []int32{
 	2,  // 7: keymanager.KeyClaims.VmProtectionKeyClaims.kem_pub_key:type_name -> keymanager.KemPublicKey
 	3,  // 8: keymanager.KeyClaims.VmProtectionKeyClaims.binding_pub_key:type_name -> keymanager.HpkePublicKey
 	10, // 9: keymanager.KeyClaims.VmProtectionKeyClaims.remaining_lifespan:type_name -> google.protobuf.Duration
-	10, // [10:10] is the sub-list for method output_type
-	10, // [10:10] is the sub-list for method input_type
+	1,  // 10: keymanager.KeyClaimsService.GetKeyClaims:input_type -> keymanager.GetKeyClaimsRequest
+	4,  // 11: keymanager.KeyClaimsService.GetKeyClaims:output_type -> keymanager.KeyClaims
+	11, // [11:12] is the sub-list for method output_type
+	10, // [10:11] is the sub-list for method input_type
 	10, // [10:10] is the sub-list for extension type_name
 	10, // [10:10] is the sub-list for extension extendee
 	0,  // [0:10] is the sub-list for field type_name
@@ -534,7 +538,7 @@ func file_km_common_proto_key_claims_proto_init() {
 			NumEnums:      1,
 			NumMessages:   6,
 			NumExtensions: 0,
-			NumServices:   0,
+			NumServices:   1,
 		},
 		GoTypes:           file_km_common_proto_key_claims_proto_goTypes,
 		DependencyIndexes: file_km_common_proto_key_claims_proto_depIdxs,

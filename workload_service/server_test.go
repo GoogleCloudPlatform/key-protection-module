@@ -11,12 +11,17 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	kpskcc "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/key_custody_core"
+	kpsapi "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/proto"
 	api "github.com/GoogleCloudPlatform/key-protection-module/workload_service/proto"
 	"github.com/google/uuid"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
@@ -24,14 +29,17 @@ import (
 	keymanager "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto"
 )
 
-func newTestServer(t *testing.T, kemGen kps.KeyProtectionService, bindingGen WorkloadService) *Server {
-	srv, err := NewServer(kemGen, bindingGen, filepath.Join(t.TempDir(), "test.sock"))
+func newTestServer(t *testing.T, kemGen kps.KeyProtectionService, bindingGen WorkloadService, mode ...keymanager.KeyProtectionMechanism) *Server {
+	m := keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED
+	if len(mode) > 0 {
+		m = mode[0]
+	}
+	srv, err := NewServer(kemGen, bindingGen, filepath.Join(t.TempDir(), "test.sock"), m)
 	if err != nil {
 		t.Fatalf("failed to create test server: %v", err)
 	}
 	t.Cleanup(func() {
-		srv.listener.Close()
-		close(srv.claimsChan)
+		_ = srv.Shutdown(context.Background())
 	})
 	return srv
 }
@@ -72,6 +80,10 @@ func (m *mockWorkloadService) GetBindingKey(_ uuid.UUID) ([]byte, *keymanager.Hp
 	return m.pubKey, m.algo, m.err
 }
 
+func (m *mockWorkloadService) DestroyAllKeys() error {
+	return nil
+}
+
 // mockKeyProtectionService implements KeyProtectionService for testing.
 type mockKeyProtectionService struct {
 	uuid                  uuid.UUID
@@ -93,29 +105,29 @@ type mockKeyProtectionService struct {
 	enumerateErr          error
 }
 
-func (m *mockKeyProtectionService) GenerateKEMKeypair(_ *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+func (m *mockKeyProtectionService) GenerateKEMKeypair(_ context.Context, _ *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	m.receivedPubKey = bindingPubKey
 	m.receivedLifespan = lifespanSecs
 	return m.uuid, m.pubKey, m.err
 }
 
-func (m *mockKeyProtectionService) EnumerateKEMKeys(_, _ int) ([]kpskcc.KEMKeyInfo, bool, error) {
+func (m *mockKeyProtectionService) EnumerateKEMKeys(_ context.Context, _, _ int32) ([]kpskcc.KEMKeyInfo, bool, error) {
 	return m.enumeratedKeys, false, m.enumerateErr
 }
 
-func (m *mockKeyProtectionService) DestroyKEMKey(kemUUID uuid.UUID) error {
+func (m *mockKeyProtectionService) DestroyKEMKey(_ context.Context, kemUUID uuid.UUID) error {
 	m.destroyedUUID = kemUUID
 	return m.destroyErr
 }
 
-func (m *mockKeyProtectionService) DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error) {
+func (m *mockKeyProtectionService) DecapAndSeal(_ context.Context, kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error) {
 	m.receivedKEMUUID = kemUUID
 	m.receivedEncKey = encapsulatedKey
 	m.receivedAAD = aad
 	return m.sealEnc, m.sealedCT, m.err
 }
 
-func (m *mockKeyProtectionService) GetKEMKey(_ uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+func (m *mockKeyProtectionService) GetKEMKey(_ context.Context, _ uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
 	return m.pubKey, m.bindingPubKey, m.algo, m.remainingLifespanSecs, m.err
 }
 
@@ -783,206 +795,189 @@ func TestHandleGetCapabilities(t *testing.T) {
 	}
 }
 
-func TestProcessClaims(t *testing.T) {
-	bindingUUID := uuid.New()
-	kemUUID := uuid.New()
-	bindingPubKey := make([]byte, 32)
-	for i := range bindingPubKey {
-		bindingPubKey[i] = byte(i + 1)
-	}
-	kemPubKey := make([]byte, 32)
-	for i := range kemPubKey {
-		kemPubKey[i] = byte(i + 100)
+func TestHandleGetClaims(t *testing.T) {
+	modes := []keymanager.KeyProtectionMechanism{
+		keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED,
+		keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM,
 	}
 
-	expectedAlgo := &keymanager.HpkeAlgorithm{
-		Kem:  keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
-		Kdf:  keymanager.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
-		Aead: keymanager.AeadAlgorithm_AEAD_ALGORITHM_AES_256_GCM,
+	for _, mode := range modes {
+		t.Run(mode.String(), func(t *testing.T) {
+			bindingUUID := uuid.New()
+			kemUUID := uuid.New()
+			bindingPubKey := make([]byte, 32)
+			for i := range bindingPubKey {
+				bindingPubKey[i] = byte(i + 1)
+			}
+			kemPubKey := make([]byte, 32)
+			for i := range kemPubKey {
+				kemPubKey[i] = byte(i + 100)
+			}
+
+			expectedAlgo := &keymanager.HpkeAlgorithm{
+				Kem:  keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+				Kdf:  keymanager.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
+				Aead: keymanager.AeadAlgorithm_AEAD_ALGORITHM_AES_256_GCM,
+			}
+
+			ws := &mockWorkloadService{
+				uuid:   bindingUUID,
+				pubKey: bindingPubKey,
+				algo:   expectedAlgo,
+			}
+			kps := &mockKeyProtectionService{
+				uuid:                  kemUUID,
+				pubKey:                kemPubKey,
+				bindingPubKey:         bindingPubKey,
+				algo:                  expectedAlgo,
+				remainingLifespanSecs: 3600,
+			}
+
+			srv := newTestServer(t, kps, ws, mode)
+			// Populate kemToBindingMap for the claims test.
+			srv.kemToBindingMap[kemUUID] = bindingUUID
+
+			t.Run("BindingClaims", func(t *testing.T) {
+				req := &keymanager.GetKeyClaimsRequest{
+					KeyHandle: &keymanager.KeyHandle{Handle: kemUUID.String()},
+					KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
+				}
+				res, err := srv.GetKeyClaims(context.Background(), req)
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				claims := res.GetVmBindingClaims()
+				if claims == nil {
+					t.Fatal("expected VmBindingClaims")
+				}
+				if !bytes.Equal(claims.BindingPubKey.PublicKey, bindingPubKey) {
+					t.Errorf("expected binding pubkey %v, got %v", bindingPubKey, claims.BindingPubKey.PublicKey)
+				}
+				if claims.BindingPubKey.Algorithm.Kem != expectedAlgo.Kem ||
+					claims.BindingPubKey.Algorithm.Kdf != expectedAlgo.Kdf ||
+					claims.BindingPubKey.Algorithm.Aead != expectedAlgo.Aead {
+					t.Errorf("expected binding algorithm %v, got %v", expectedAlgo, claims.BindingPubKey.Algorithm)
+				}
+			})
+
+			t.Run("KemClaims", func(t *testing.T) {
+				req := &keymanager.GetKeyClaimsRequest{
+					KeyHandle: &keymanager.KeyHandle{Handle: kemUUID.String()},
+					KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
+				}
+				res, err := srv.GetKeyClaims(context.Background(), req)
+				if mode == keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM {
+					if err == nil {
+						t.Fatal("expected error for KEM claims in KEY_PROTECTION_VM mode")
+					}
+					s, ok := status.FromError(err)
+					if !ok || s.Code() != codes.InvalidArgument {
+						t.Errorf("expected InvalidArgument error, got %v", err)
+					}
+				} else {
+					if err != nil {
+						t.Fatalf("unexpected error: %v", err)
+					}
+					claims := res.GetVmKeyClaims()
+					if claims == nil {
+						t.Fatal("expected VmKeyClaims")
+					}
+					if !bytes.Equal(claims.KemPubKey.PublicKey, kemPubKey) {
+						t.Errorf("expected KEM pubkey %v, got %v", kemPubKey, claims.KemPubKey.PublicKey)
+					}
+					if claims.KemPubKey.Algorithm != expectedAlgo.Kem {
+						t.Errorf("expected KEM algorithm %v, got %v", expectedAlgo.Kem, claims.KemPubKey.Algorithm)
+					}
+					if !bytes.Equal(claims.BindingPubKey.PublicKey, bindingPubKey) {
+						t.Errorf("expected binding pubkey %v, got %v", bindingPubKey, claims.BindingPubKey.PublicKey)
+					}
+					if claims.BindingPubKey.Algorithm.Kem != expectedAlgo.Kem ||
+						claims.BindingPubKey.Algorithm.Kdf != expectedAlgo.Kdf ||
+						claims.BindingPubKey.Algorithm.Aead != expectedAlgo.Aead {
+						t.Errorf("expected binding algorithm %v, got %v", expectedAlgo, claims.BindingPubKey.Algorithm)
+					}
+					if claims.ExpirationTime <= float64(time.Now().Unix()) {
+						t.Errorf("expected expiration time to be in the future, got %v", claims.ExpirationTime)
+					}
+					if claims.RemainingLifespan.AsDuration() <= 0 { //nolint:staticcheck
+						t.Errorf("expected positive remaining lifespan, got %v", claims.RemainingLifespan.AsDuration()) //nolint:staticcheck
+					}
+				}
+			})
+
+			t.Run("InvalidUUID", func(t *testing.T) {
+				req := &keymanager.GetKeyClaimsRequest{
+					KeyHandle: &keymanager.KeyHandle{Handle: "invalid-uuid"},
+					KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
+				}
+				_, err := srv.GetKeyClaims(context.Background(), req)
+				if err == nil {
+					t.Fatal("expected error for invalid UUID")
+				}
+			})
+
+			t.Run("UnsupportedKeyType", func(t *testing.T) {
+				req := &keymanager.GetKeyClaimsRequest{
+					KeyHandle: &keymanager.KeyHandle{Handle: bindingUUID.String()},
+					KeyType:   keymanager.KeyType_KEY_TYPE_UNSPECIFIED,
+				}
+				_, err := srv.GetKeyClaims(context.Background(), req)
+				if err == nil {
+					t.Fatal("expected error for unsupported key type")
+				}
+				if !strings.Contains(err.Error(), "unsupported key type") {
+					t.Errorf("expected error to contain 'unsupported key type', got %v", err)
+				}
+			})
+
+			t.Run("BindingKeyNotFound", func(t *testing.T) {
+				notFoundUUID := uuid.New()
+				req := &keymanager.GetKeyClaimsRequest{
+					KeyHandle: &keymanager.KeyHandle{Handle: notFoundUUID.String()},
+					KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
+				}
+
+				wsErr := &mockWorkloadService{err: fmt.Errorf("not found")}
+				srvErr := newTestServer(t, kps, wsErr, mode)
+
+				_, err := srvErr.GetKeyClaims(context.Background(), req)
+				if err == nil {
+					t.Fatal("expected error for binding key not found")
+				}
+				if !strings.Contains(err.Error(), "failed to retrieve binding key claims") {
+					t.Errorf("expected error to contain 'failed to retrieve binding key claims', got %v", err)
+				}
+			})
+
+			t.Run("KemKeyNotFound", func(t *testing.T) {
+				req := &keymanager.GetKeyClaimsRequest{
+					KeyHandle: &keymanager.KeyHandle{Handle: kemUUID.String()},
+					KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
+				}
+
+				kpsErr := &mockKeyProtectionService{err: fmt.Errorf("not found")}
+				srvErr := newTestServer(t, kpsErr, ws, mode)
+
+				_, err := srvErr.GetKeyClaims(context.Background(), req)
+				if mode == keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM {
+					if err == nil {
+						t.Fatal("expected error for KEM claims in KEY_PROTECTION_VM mode")
+					}
+					s, ok := status.FromError(err)
+					if !ok || s.Code() != codes.InvalidArgument {
+						t.Errorf("expected InvalidArgument error, got %v", err)
+					}
+				} else {
+					if err == nil {
+						t.Fatal("expected error for KEM key not found")
+					}
+					if !strings.Contains(err.Error(), "failed to get KEM key") {
+						t.Errorf("expected error to contain 'failed to get KEM key', got %v", err)
+					}
+				}
+			})
+		})
 	}
-
-	ws := &mockWorkloadService{
-		uuid:   bindingUUID,
-		pubKey: bindingPubKey,
-		algo:   expectedAlgo,
-	}
-	kps := &mockKeyProtectionService{
-		uuid:                  kemUUID,
-		pubKey:                kemPubKey,
-		bindingPubKey:         bindingPubKey,
-		algo:                  expectedAlgo,
-		remainingLifespanSecs: 3600,
-	}
-
-	srv := newTestServer(t, kps, ws)
-	// Populate kemToBindingMap for the claims test.
-	srv.kemToBindingMap[kemUUID] = bindingUUID
-
-	t.Run("BindingClaims", func(t *testing.T) {
-		respChan := make(chan *ClaimsResult, 1)
-		req := &keymanager.GetKeyClaimsRequest{
-			KeyHandle: &keymanager.KeyHandle{Handle: kemUUID.String()},
-			KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
-		}
-		srv.claimsChan <- &ClaimsCall{Request: req, RespChan: respChan}
-
-		select {
-		case res := <-respChan:
-			if res.Err != nil {
-				t.Fatalf("unexpected error: %v", res.Err)
-			}
-			claims := res.Reply.GetVmBindingClaims()
-			if claims == nil {
-				t.Fatal("expected VmBindingClaims")
-			}
-			if !bytes.Equal(claims.BindingPubKey.PublicKey, bindingPubKey) {
-				t.Errorf("expected binding pubkey %v, got %v", bindingPubKey, claims.BindingPubKey.PublicKey)
-			}
-			if claims.BindingPubKey.Algorithm.Kem != expectedAlgo.Kem ||
-				claims.BindingPubKey.Algorithm.Kdf != expectedAlgo.Kdf ||
-				claims.BindingPubKey.Algorithm.Aead != expectedAlgo.Aead {
-				t.Errorf("expected binding algorithm %v, got %v", expectedAlgo, claims.BindingPubKey.Algorithm)
-			}
-		case <-time.After(2 * time.Second):
-			t.Fatal("timed out waiting for response")
-		}
-	})
-
-	t.Run("KemClaims", func(t *testing.T) {
-		respChan := make(chan *ClaimsResult, 1)
-		req := &keymanager.GetKeyClaimsRequest{
-			KeyHandle: &keymanager.KeyHandle{Handle: kemUUID.String()},
-			KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
-		}
-		srv.claimsChan <- &ClaimsCall{Request: req, RespChan: respChan}
-
-		select {
-		case res := <-respChan:
-			if res.Err != nil {
-				t.Fatalf("unexpected error: %v", res.Err)
-			}
-			claims := res.Reply.GetVmKeyClaims()
-			if claims == nil {
-				t.Fatal("expected VmKeyClaims")
-			}
-			if !bytes.Equal(claims.KemPubKey.PublicKey, kemPubKey) {
-				t.Errorf("expected KEM pubkey %v, got %v", kemPubKey, claims.KemPubKey.PublicKey)
-			}
-			if claims.KemPubKey.Algorithm != expectedAlgo.Kem {
-				t.Errorf("expected KEM algorithm %v, got %v", expectedAlgo.Kem, claims.KemPubKey.Algorithm)
-			}
-			if !bytes.Equal(claims.BindingPubKey.PublicKey, bindingPubKey) {
-				t.Errorf("expected binding pubkey %v, got %v", bindingPubKey, claims.BindingPubKey.PublicKey)
-			}
-			if claims.BindingPubKey.Algorithm.Kem != expectedAlgo.Kem ||
-				claims.BindingPubKey.Algorithm.Kdf != expectedAlgo.Kdf ||
-				claims.BindingPubKey.Algorithm.Aead != expectedAlgo.Aead {
-				t.Errorf("expected binding algorithm %v, got %v", expectedAlgo, claims.BindingPubKey.Algorithm)
-			}
-			if claims.ExpirationTime <= float64(time.Now().Unix()) {
-				t.Errorf("expected expiration time to be in the future, got %v", claims.ExpirationTime)
-			}
-			if claims.RemainingLifespan.AsDuration() <= 0 { //nolint:staticcheck
-				t.Errorf("expected positive remaining lifespan, got %v", claims.RemainingLifespan.AsDuration()) //nolint:staticcheck
-			}
-		case <-time.After(2 * time.Second):
-			t.Fatal("timed out waiting for response")
-		}
-	})
-
-	t.Run("InvalidUUID", func(t *testing.T) {
-		respChan := make(chan *ClaimsResult, 1)
-		req := &keymanager.GetKeyClaimsRequest{
-			KeyHandle: &keymanager.KeyHandle{Handle: "invalid-uuid"},
-			KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
-		}
-		srv.claimsChan <- &ClaimsCall{Request: req, RespChan: respChan}
-
-		select {
-		case res := <-respChan:
-			if res.Err == nil {
-				t.Fatal("expected error for invalid UUID")
-			}
-		case <-time.After(2 * time.Second):
-			t.Fatal("timed out waiting for response")
-		}
-	})
-
-	t.Run("UnsupportedKeyType", func(t *testing.T) {
-		respChan := make(chan *ClaimsResult, 1)
-		req := &keymanager.GetKeyClaimsRequest{
-			KeyHandle: &keymanager.KeyHandle{Handle: bindingUUID.String()},
-			KeyType:   keymanager.KeyType_KEY_TYPE_UNSPECIFIED,
-		}
-		srv.claimsChan <- &ClaimsCall{Request: req, RespChan: respChan}
-
-		select {
-		case res := <-respChan:
-			if res.Err == nil {
-				t.Fatal("expected error for unsupported key type")
-			}
-			if !strings.Contains(res.Err.Error(), "unsupported key type") {
-				t.Errorf("expected error to contain 'unsupported key type', got %v", res.Err)
-			}
-		case <-time.After(2 * time.Second):
-			t.Fatal("timed out waiting for response")
-		}
-	})
-
-	t.Run("BindingKeyNotFound", func(t *testing.T) {
-		respChan := make(chan *ClaimsResult, 1)
-		// Use a random UUID that isn't the mock's UUID
-		notFoundUUID := uuid.New()
-		req := &keymanager.GetKeyClaimsRequest{
-			KeyHandle: &keymanager.KeyHandle{Handle: notFoundUUID.String()},
-			KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
-		}
-
-		// Update mock to return error for anything other than its set UUID
-		// Actually, the current mock returns its fixed pubKey/err regardless of input ID.
-		// Let's create a new server with a mock that returns error.
-		wsErr := &mockWorkloadService{err: fmt.Errorf("not found")}
-		srvErr := newTestServer(t, kps, wsErr)
-
-		srvErr.claimsChan <- &ClaimsCall{Request: req, RespChan: respChan}
-
-		select {
-		case res := <-respChan:
-			if res.Err == nil {
-				t.Fatal("expected error for binding key not found")
-			}
-			if !strings.Contains(res.Err.Error(), "failed to retrieve binding key claims") {
-				t.Errorf("expected error to contain 'failed to retrieve binding key claims', got %v", res.Err)
-			}
-		case <-time.After(2 * time.Second):
-			t.Fatal("timed out waiting for response")
-		}
-	})
-
-	t.Run("KemKeyNotFound", func(t *testing.T) {
-		respChan := make(chan *ClaimsResult, 1)
-		req := &keymanager.GetKeyClaimsRequest{
-			KeyHandle: &keymanager.KeyHandle{Handle: kemUUID.String()},
-			KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
-		}
-
-		kpsErr := &mockKeyProtectionService{err: fmt.Errorf("not found")}
-		srvErr := newTestServer(t, kpsErr, ws)
-
-		srvErr.claimsChan <- &ClaimsCall{Request: req, RespChan: respChan}
-
-		select {
-		case res := <-respChan:
-			if res.Err == nil {
-				t.Fatal("expected error for KEM key not found")
-			}
-			if !strings.Contains(res.Err.Error(), "failed to get KEM key") {
-				t.Errorf("expected error to contain 'failed to get KEM key', got %v", res.Err)
-			}
-		case <-time.After(2 * time.Second):
-			t.Fatal("timed out waiting for response")
-		}
-	})
 }
 
 func TestHandleGetCapabilitiesInvalidMethod(t *testing.T) {
@@ -1313,146 +1308,136 @@ func TestHandleDecapsUnsupportedAlgorithm(t *testing.T) {
 	}
 }
 
-func TestProcessClaimsTimeout(t *testing.T) {
-	oldTimeout := ClaimsResponseTimeout
-	ClaimsResponseTimeout = 10 * time.Millisecond
-	defer func() { ClaimsResponseTimeout = oldTimeout }()
-
-	srv := newTestServer(t, &mockKeyProtectionService{}, &mockWorkloadService{})
-	// processClaims is already started in newTestServer -> NewServer -> New
-
-	respChan1 := make(chan *ClaimsResult) // Unbuffered
-	req1 := &keymanager.GetKeyClaimsRequest{
-		KeyHandle: &keymanager.KeyHandle{Handle: uuid.New().String()},
-		KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
+func TestHttpStatusFromError_FFISentinels(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want int
+	}{
+		{"nil", nil, http.StatusOK},
+		{"not_found", keymanager.Status_STATUS_NOT_FOUND.ToStatus(), http.StatusNotFound},
+		{"invalid_argument", keymanager.Status_STATUS_INVALID_ARGUMENT.ToStatus(), http.StatusBadRequest},
+		{"unsupported_algorithm", keymanager.Status_STATUS_UNSUPPORTED_ALGORITHM.ToStatus(), http.StatusBadRequest},
+		{"invalid_key", keymanager.Status_STATUS_INVALID_KEY.ToStatus(), http.StatusBadRequest},
+		{"permission_denied", keymanager.Status_STATUS_PERMISSION_DENIED.ToStatus(), http.StatusForbidden},
+		{"unauthenticated", keymanager.Status_STATUS_UNAUTHENTICATED.ToStatus(), http.StatusUnauthorized},
+		{"already_exists", keymanager.Status_STATUS_ALREADY_EXISTS.ToStatus(), http.StatusConflict},
+		{"internal_default", errors.New("boom"), http.StatusInternalServerError},
 	}
-
-	// 1. Send first request and DO NOT read from it.
-	// This should timeout in 10ms.
-	srv.claimsChan <- &ClaimsCall{Request: req1, RespChan: respChan1}
-
-	// 2. Send second request and read from it.
-	// We need a valid UUID in the map for this to succeed easily.
-	kemUUID := uuid.New()
-	bindingUUID := uuid.New()
-	srv.mu.Lock()
-	srv.kemToBindingMap[kemUUID] = bindingUUID
-	srv.mu.Unlock()
-
-	respChan2 := make(chan *ClaimsResult, 1)
-	req2 := &keymanager.GetKeyClaimsRequest{
-		KeyHandle: &keymanager.KeyHandle{Handle: kemUUID.String()},
-		KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
-	}
-
-	// Give it a bit of time for the first one to timeout
-	time.Sleep(20 * time.Millisecond)
-
-	srv.claimsChan <- &ClaimsCall{Request: req2, RespChan: respChan2}
-
-	select {
-	case res := <-respChan2:
-		if res.Err != nil {
-			t.Errorf("expected no error for second request, got: %v", res.Err)
-		}
-	case <-time.After(1 * time.Second):
-		t.Fatal("timed out waiting for second request response - background worker might be blocked!")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := httpStatusFromError(tc.err); got != tc.want {
+				t.Errorf("httpStatusFromError(%v) = %d, want %d", tc.err, got, tc.want)
+			}
+		})
 	}
 }
 
-func TestGetClaimsFromChannel(t *testing.T) {
-	keyHandle := "test-uuid-123"
-	expectedReply := &keymanager.KeyClaims{
-		Claims: &keymanager.KeyClaims_VmBindingClaims{},
-	}
-
-	tests := []struct {
-		name           string
-		keyType        keymanager.KeyType
-		workerBehavior func(call *ClaimsCall)
-		ctxTimeout     time.Duration
-		wantErr        string
+func TestFFIStatusFromGrpcError(t *testing.T) {
+	cases := []struct {
+		name     string
+		err      error
+		wantNil  bool
+		wantFFI  keymanager.Status
+		wantSame bool // true if helper should pass the err through unchanged
 	}{
-		{
-			name:    "success",
-			keyType: keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
-			workerBehavior: func(call *ClaimsCall) {
-				call.RespChan <- &ClaimsResult{Reply: expectedReply}
-			},
-			ctxTimeout: 5 * time.Second,
-			wantErr:    "",
-		},
-		{
-			name:    "worker returns error",
-			keyType: keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
-			workerBehavior: func(call *ClaimsCall) {
-				call.RespChan <- &ClaimsResult{Err: errors.New("db connection failed")}
-			},
-			ctxTimeout: 5 * time.Second,
-			wantErr:    "worker error: db connection failed",
-		},
-		{
-			name:    "context already cancelled",
-			keyType: keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
-			workerBehavior: func(_ *ClaimsCall) {
-				// Worker won't even be reached if ctx is canceled early
-			},
-			ctxTimeout: -1, // Force immediate cancel
-			wantErr:    context.Canceled.Error(),
-		},
-		{
-			name:    "response timeout",
-			keyType: keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
-			workerBehavior: func(_ *ClaimsCall) {
-				// Simulate worker hanging by doing nothing
-			},
-			ctxTimeout: 5 * time.Second,
-			wantErr:    "timed out waiting for processClaims",
-		},
+		{"nil", nil, true, 0, false},
+		{"not_found", status.Error(codes.NotFound, "x"), false, keymanager.Status_STATUS_NOT_FOUND, false},
+		{"invalid_argument", status.Error(codes.InvalidArgument, "x"), false, keymanager.Status_STATUS_INVALID_ARGUMENT, false},
+		{"permission_denied", status.Error(codes.PermissionDenied, "x"), false, keymanager.Status_STATUS_PERMISSION_DENIED, false},
+		{"unauthenticated", status.Error(codes.Unauthenticated, "x"), false, keymanager.Status_STATUS_UNAUTHENTICATED, false},
+		{"already_exists", status.Error(codes.AlreadyExists, "x"), false, keymanager.Status_STATUS_ALREADY_EXISTS, false},
+		{"unavailable_passes_through", status.Error(codes.Unavailable, "x"), false, 0, true},
+		{"non_grpc_passes_through", errors.New("plain"), false, 0, true},
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			claimsChan := make(chan *ClaimsCall, 1)
-			s := &Server{claimsChan: claimsChan}
-
-			var ctx context.Context
-			var cancel context.CancelFunc
-			if tt.ctxTimeout < 0 {
-				ctx, cancel = context.WithCancel(context.Background())
-				cancel() // Pre-cancel
-			} else {
-				ctx, cancel = context.WithTimeout(context.Background(), tt.ctxTimeout)
-				defer cancel()
-			}
-
-			go func() {
-				select {
-				case call := <-claimsChan:
-					tt.workerBehavior(call)
-				case <-ctx.Done():
-					return
-				}
-			}()
-
-			result, err := s.GetKeyClaims(ctx, keyHandle, tt.keyType)
-
-			if tt.wantErr != "" {
-				if err == nil {
-					t.Fatalf("expected error containing %q, got nil", tt.wantErr)
-				}
-				if !strings.Contains(err.Error(), tt.wantErr) {
-					t.Errorf("expected error %q, got %q", tt.wantErr, err.Error())
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ffiStatusFromGrpcError(tc.err)
+			if tc.wantNil {
+				if got != nil {
+					t.Fatalf("expected nil, got %v", got)
 				}
 				return
 			}
-
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
+			if tc.wantSame {
+				if got != tc.err {
+					t.Fatalf("expected pass-through, got %v", got)
+				}
+				return
 			}
-			if result != expectedReply {
-				t.Errorf("result mismatch: expected %v, got %v", expectedReply, result)
+			if !errors.Is(got, tc.wantFFI) {
+				t.Fatalf("expected errors.Is(got, %v) to be true, got %v", tc.wantFFI, got)
 			}
 		})
+	}
+}
+
+func TestPerformHeartbeatSuccess(t *testing.T) {
+	srv := &Server{
+		kemToBindingMap: make(map[uuid.UUID]uuid.UUID),
+		mu:              sync.RWMutex{},
+	}
+	token := "test-token"
+	client := &mockKPSClient{token: token}
+	var cachedToken string
+
+	srv.performHeartbeat(context.Background(), client, &cachedToken)
+
+	if cachedToken != token {
+		t.Errorf("expected cached token %s, got %s", token, cachedToken)
+	}
+}
+
+func TestPerformHeartbeatTokenMismatch(t *testing.T) {
+	srv := &Server{
+		kemToBindingMap: make(map[uuid.UUID]uuid.UUID),
+		mu:              sync.RWMutex{},
+		workloadService: &mockWorkloadService{},
+	}
+	srv.kemToBindingMap[uuid.New()] = uuid.New()
+
+	client := &mockKPSClient{token: "new-token"}
+	cachedToken := "old-token"
+
+	srv.performHeartbeat(context.Background(), client, &cachedToken)
+
+	if cachedToken != "new-token" {
+		t.Errorf("expected cached token to be updated to new-token, got %s", cachedToken)
+	}
+	if len(srv.kemToBindingMap) != 0 {
+		t.Errorf("expected kemToBindingMap to be cleared, got size %d", len(srv.kemToBindingMap))
+	}
+}
+
+type mockKPSClient struct {
+	kpsapi.KeyProtectionServiceClient
+	token string
+	err   error
+}
+
+func (m *mockKPSClient) Heartbeat(_ context.Context, _ *kpsapi.HeartbeatRequest, _ ...grpc.CallOption) (*kpsapi.HeartbeatResponse, error) {
+	return &kpsapi.HeartbeatResponse{KpsBootToken: m.token}, m.err
+}
+
+func TestPerformHeartbeatTimeout(t *testing.T) {
+	srv := &Server{
+		kemToBindingMap: make(map[uuid.UUID]uuid.UUID),
+		mu:              sync.RWMutex{},
+		workloadService: &mockWorkloadService{},
+		initialBackoff:  1 * time.Millisecond,
+		maxBackoff:      4 * time.Millisecond,
+	}
+	// Add a dummy mapping to verify cleanup
+	kemUUID := uuid.New()
+	srv.kemToBindingMap[kemUUID] = uuid.New()
+
+	// Mock client that always fails
+	client := &mockKPSClient{err: fmt.Errorf("heartbeat failed")}
+
+	srv.performHeartbeat(context.Background(), client, new(string))
+
+	// Verify that cleanup was triggered (map should be empty)
+	if len(srv.kemToBindingMap) != 0 {
+		t.Errorf("expected kemToBindingMap to be cleared after persistent failure, got size %d", len(srv.kemToBindingMap))
 	}
 }

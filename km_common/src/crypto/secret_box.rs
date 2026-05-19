@@ -10,17 +10,18 @@ pub struct SecretBox(Box<[u8]>);
 
 impl SecretBox {
     /// Creates a new `SecretBox` from a `Vec<u8>`.
-    /// If the `Vec<u8>` has extra capacity, a new `Vec<u8>` with the exact size
-    /// is created and the original `Vec<u8>` is zeroized to prevent leaking the data.
+    /// If the `Vec<u8>` has extra capacity, a new, exactly-sized `Box<[u8]>` is allocated,
+    /// the data is copied, and the original `Vec<u8>` is zeroized before being dropped
+    /// to prevent leaking sensitive data.
     pub fn new(mut data: Vec<u8>) -> Self {
-        if data.capacity() > data.len() {
-            let mut exact_target = Vec::with_capacity(data.len());
-            exact_target.extend_from_slice(&data);
+        let boxed: Box<[u8]> = if data.capacity() > data.len() {
+            let b = Box::from(data.as_slice());
             data.zeroize();
-            Self(exact_target.into_boxed_slice())
+            b
         } else {
-            Self(data.into_boxed_slice())
-        }
+            data.into_boxed_slice()
+        };
+        Self(boxed)
     }
 
     /// Returns a reference to the inner slice.
@@ -78,5 +79,14 @@ mod tests {
         let secret = SecretBox::new(data.clone());
         let slice: &[u8] = secret.as_ref();
         assert_eq!(slice, &data[..]);
+    }
+
+    #[test]
+    fn test_secret_box_with_excess_capacity_preserves_contents() {
+        let mut data = Vec::with_capacity(64);
+        data.extend_from_slice(&[1, 2, 3, 4]);
+        assert!(data.capacity() > data.len(), "test precondition");
+        let secret = SecretBox::new(data);
+        assert_eq!(secret.as_slice(), &[1, 2, 3, 4]);
     }
 }

@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "key_handle": {
+      "type": "object",
+      "properties": {
+        "handle": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        }
+      },
+      "required": ["handle"],
+      "additionalProperties": false
+    },
+    "pub_key": {
+      "type": "object",
+      "properties": {
+        "algorithm": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["kem"]
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "kem_id": {
+                  "type": "string",
+                  "enum": ["KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256"]
+                }
+              },
+              "required": ["kem_id"],
+              "additionalProperties": false
+            }
+          },
+          "required": ["type", "params"],
+          "additionalProperties": false
+        },
+        "public_key": {
+          "type": "string",
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+        }
+      },
+      "required": ["algorithm", "public_key"],
+      "additionalProperties": false
+    },
+    "key_protection_mechanism": {
+      "type": "string",
+      "enum": ["KEY_PROTECTION_MECHANISM_UNSPECIFIED", "DEFAULT", "KEY_PROTECTION_VM", "KEY_PROTECTION_VM_EMULATED"]
+    },
+    "expiration_time": {
+      "type": "number",
+      "minimum": 0
+    }
+  },
+  "required": ["key_handle", "pub_key", "key_protection_mechanism", "expiration_time"],
+  "additionalProperties": false
+}

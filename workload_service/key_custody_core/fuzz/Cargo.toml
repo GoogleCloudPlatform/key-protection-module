@@ -1,0 +1,27 @@
+[package]
+name = "ws-key-custody-core-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata.cargo-fuzz]
+cargo-to-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+ws_key_custody_core = { path = ".." }
+km_common = { path = "../../../km_common" }
+uuid = { version = "1.20.0", features = ["v4"] }
+prost = "0.13"
+
+# Prevent this crate from ruining the workspace for other platforms
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[[bin]]
+name = "fuzz_open"
+path = "fuzz_targets/fuzz_open.rs"
+test = false
+doc = false
+
+[workspace]

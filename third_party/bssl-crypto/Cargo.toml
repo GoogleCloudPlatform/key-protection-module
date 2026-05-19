@@ -8,6 +8,9 @@ license = "Apache-2.0"
 [lib]
 path = "../../boringssl/rust/bssl-crypto/src/lib.rs"
 
+[lints.clippy]
+all = "allow"
+
 [dependencies]
 bssl-sys = { path = "../bssl-sys" }
 
