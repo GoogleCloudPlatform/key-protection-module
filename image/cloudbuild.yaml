@@ -71,6 +71,7 @@ steps:
         cp ./image/attestation_agent /workspace/oem-install/kps/attestation_agent
         cp ./image/exit_script.sh /workspace/oem-install/kps/exit_script.sh
         cp ./image/kps_runner.sh /workspace/oem-install/kps/kps_runner.sh
+        cp ./image/network_setup.sh /workspace/oem-install/kps/network_setup.sh
 
         if [ -f /workspace/kps_image/image.tar ]; then
             cp /workspace/kps_image/image.tar /workspace/oem-install/kps/image.tar
@@ -86,6 +87,7 @@ steps:
         chmod +x /workspace/oem-install/entrypoint.sh || true
         chmod +x /workspace/oem-install/kps/exit_script.sh || true
         chmod +x /workspace/oem-install/kps/attestation_agent || true
+        chmod +x /workspace/oem-install/kps/network_setup.sh || true
 
   - name: "gcr.io/cloud-builders/gcloud"
     id: "DownloadVmlinux"
@@ -121,15 +123,29 @@ steps:
           "s|cros_efi|cros_efi systemd.mask=konlet-startup.service|g"
           "s|cros_efi|cros_efi systemd.mask=update-engine.service|g"
           "s|cros_efi|cros_efi confidential-space.hardened=false|g"
+          "s|cros_efi|cros_efi systemd.mask=gcr-wait-online.service|g"
+          "s|cros_efi|cros_efi systemd.mask=systemd-networkd-wait-online.service|g"
+          "s|cros_efi|cros_efi systemd.mask=cloud-init.service|g"
+          "s|cros_efi|cros_efi systemd.mask=cloud-init-local.service|g"
+          "s|cros_efi|cros_efi systemd.mask=cloud-config.service|g"
+          "s|cros_efi|cros_efi systemd.mask=cloud-final.service|g"
+          "s|cros_efi|cros_efi systemd.mask=get-cloud-api-domains.service|g"
+          "s|cros_efi|cros_efi systemd.mask=google-guest-agent-manager.service|g"
+          "s|cros_efi|cros_efi systemd.mask=google-guest-compat-manager.service|g"
         )
 
         HARDENED_COMMANDS=(
           "s|cros_efi|cros_efi systemd.wants=basic.target|g"
           "s|cros_efi|cros_efi systemd.wants=systemd-resolved.service|g"
-          "s|cros_efi|cros_efi systemd.wants=network-online.target|g"
-          "s|cros_efi|cros_efi systemd.wants=gcr-online.target|g"
-          # Disabled because no cloud-init
-          # "s|cros_efi|cros_efi systemd.unit=cloud-final.service|g"
+          "s|cros_efi|cros_efi systemd.mask=gcr-wait-online.service|g"
+          "s|cros_efi|cros_efi systemd.mask=systemd-networkd-wait-online.service|g"
+          "s|cros_efi|cros_efi systemd.mask=cloud-init.service|g"
+          "s|cros_efi|cros_efi systemd.mask=cloud-init-local.service|g"
+          "s|cros_efi|cros_efi systemd.mask=cloud-config.service|g"
+          "s|cros_efi|cros_efi systemd.mask=cloud-final.service|g"
+          "s|cros_efi|cros_efi systemd.mask=get-cloud-api-domains.service|g"
+          "s|cros_efi|cros_efi systemd.mask=google-guest-agent-manager.service|g"
+          "s|cros_efi|cros_efi systemd.mask=google-guest-compat-manager.service|g"
           "s|cros_efi|cros_efi systemd.mask=var-lib-docker.mount|g"
           "s|cros_efi|cros_efi systemd.mask=docker.service|g"
           "s|cros_efi|cros_efi systemd.mask=google-guest-agent.service|g"

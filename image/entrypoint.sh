@@ -24,6 +24,15 @@ main() {
   mkdir /tmp/container_launcher
   chmod +rw /tmp/container_launcher
 
+  # Configure static IP for tap device using systemd-networkd.
+  if [[ -f /usr/share/oem/kps/network_setup.sh ]]; then
+    /usr/share/oem/kps/network_setup.sh
+    systemctl restart systemd-networkd
+  fi
+
+  # Allow incoming TCP packets on port 50050 for KPS.
+  iptables -I INPUT -d 192.168.100.3 -p tcp --dport 50050 -j ACCEPT
+
   systemctl daemon-reload
   systemctl enable keymanager.service
   systemctl enable attestation.service
