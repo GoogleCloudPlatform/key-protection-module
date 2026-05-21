@@ -96,14 +96,14 @@ def test_get_capabilities_success(wsd_client):
             400,
             "invalid request" # protovalidate error (lifespan gt 0)
         ),
-        # Sad Case: Negative lifespan (should fail json unmarshal)
+        # Sad Case: Negative lifespan (should fail in protojson validation)
         (
             {
                 "algorithm": {"type": "kem", "params": {"kem_id": "KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256"}},
                 "lifespan": -1
             },
             400,
-            "invalid request body"
+            "invalid value for uint64 field lifespan"
         ),
         # Sad Case: Unsupported algorithm type
         (

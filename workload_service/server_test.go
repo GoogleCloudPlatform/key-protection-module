@@ -1108,7 +1108,7 @@ func TestHandleDestroy(t *testing.T) {
 			method:                 http.MethodPost,
 			body:                   validDestroyBody(validKEMUUID.String()),
 			setupMap:               true,
-			expectedStatus:         http.StatusOK,
+			expectedStatus:         http.StatusNoContent,
 			expectKEMDestroyed:     true,
 			expectBindingDestroyed: true,
 			expectMapRemoved:       true,

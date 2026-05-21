@@ -21,6 +21,7 @@ import (
 	"buf.build/go/protovalidate"
 
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	api "github.com/GoogleCloudPlatform/key-protection-module/workload_service/proto"
 	"github.com/google/uuid"
@@ -401,6 +402,13 @@ func customHTTPErrorHandler(_ context.Context, _ *runtime.ServeMux, _ runtime.Ma
 	}
 }
 
+func customForwardResponse(_ context.Context, w http.ResponseWriter, resp proto.Message) error {
+	if _, ok := resp.(*api.DestroyResponse); ok {
+		w.WriteHeader(http.StatusNoContent)
+	}
+	return nil
+}
+
 func grpcCodeFromError(err error) codes.Code {
 	if err == nil {
 		return codes.OK
@@ -496,6 +504,8 @@ func initRESTGatewayProxy(restSocketPath string, conn *grpc.ClientConn) (*http.S
 	mux := runtime.NewServeMux(
 		// Intercept gRPC status errors and serialize them back into the legacy {"error": "<message>"} JSON layout
 		runtime.WithErrorHandler(customHTTPErrorHandler),
+		// Customize successful responses (e.g. return HTTP 204 No Content for DestroyResponse)
+		runtime.WithForwardResponseOption(customForwardResponse),
 		// Preserve original snake_case protobuf field casing and enforce inclusion of empty structures unconditionally
 		runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{
 			MarshalOptions: protojson.MarshalOptions{
@@ -654,14 +664,18 @@ func (s *Server) GenerateKey(ctx context.Context, req *api.GenerateKeyRequest) (
 	case "kem":
 		return s.generateKEMKey(ctx, req)
 	default:
-		return nil, status.Errorf(codes.InvalidArgument, "unsupported algorithm type: %q. Only 'kem' is supported", req.Algorithm.Type)
+		return nil, status.Errorf(codes.InvalidArgument, "unsupported algorithm type: %q. Only 'kem' is supported.", req.Algorithm.Type)
 	}
 }
 
 func (s *Server) generateKEMKey(ctx context.Context, req *api.GenerateKeyRequest) (*api.GenerateKeyResponse, error) {
 	// Validate algorithm.
 	if req.Algorithm.GetParams() == nil || !IsSupportedKemAlgorithm(req.Algorithm.GetParams().GetKemId()) {
-		return nil, status.Errorf(codes.InvalidArgument, "unsupported ciphertext algorithm. Supported algorithms: %s", SupportedKemAlgorithmsString())
+		kemID := keymanager.KemAlgorithm_KEM_ALGORITHM_UNSPECIFIED
+		if req.Algorithm.GetParams() != nil {
+			kemID = req.Algorithm.GetParams().GetKemId()
+		}
+		return nil, status.Errorf(codes.InvalidArgument, "unsupported algorithm: %s. Supported algorithms: %s", kemID.String(), SupportedKemAlgorithmsString())
 	}
 
 	// Construct the full HPKE algorithm suite based on the requested KEM.
