@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"time"
 
 	"github.com/GoogleCloudPlatform/key-protection-module/km_common/proto"
 	"github.com/google/go-tpm-tools/agent"
@@ -22,15 +23,19 @@ type Server struct {
 	net.Listener
 }
 
+var defaultKPSTimeout = 30 * time.Second
+
 type handler struct {
 	pb.UnimplementedAttestationServiceServer
 	agent.AttestationAgent
+	keyClaimsClient keymanager.KeyClaimsServiceClient
 }
 
-func New(ctx context.Context, nl net.Listener, a agent.AttestationAgent) *Server {
+func New(ctx context.Context, nl net.Listener, a agent.AttestationAgent, keyClaimsClient keymanager.KeyClaimsServiceClient) *Server {
 	server := grpc.NewServer()
 	pb.RegisterAttestationServiceServer(server, &handler{
 		AttestationAgent: a,
+		keyClaimsClient:  keyClaimsClient,
 	})
 
 	return &Server{
@@ -48,13 +53,18 @@ func (h *handler) GetKeyEndorsement(ctx context.Context, req *pb.GetKeyEndorseme
 		return nil, status.Error(codes.InvalidArgument, "key_handle is required")
 	}
 
-	// TODO(yawangwang): Call containerized KPS service to get KEM key claims.
-	kemKeyClaims, err := stubKeyClaims(ctx, req.KeyHandle.Handle, keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY)
+	kpsCtx, cancel := context.WithTimeout(ctx, defaultKPSTimeout)
+	defer cancel()
+
+	keyClaims, err := h.keyClaimsClient.GetKeyClaims(kpsCtx, &keymanager.GetKeyClaimsRequest{
+		KeyHandle: req.KeyHandle,
+		KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
+	})
 	if err != nil {
-		return nil, status.Error(codes.Internal, fmt.Sprintf("failed to get KEM key claims: %v", err))
+		return nil, status.Error(codes.Internal, fmt.Sprintf("failed to get key claims from KPS: %v", err))
 	}
 
-	kemBytes, err := proto.Marshal(kemKeyClaims)
+	kemBytes, err := proto.Marshal(keyClaims)
 	if err != nil {
 		return nil, status.Error(codes.Internal, fmt.Sprintf("failed to marshal KEM key claims: %v", err))
 	}
@@ -90,15 +100,4 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	case <-stopped:
 		return nil
 	}
-}
-
-func stubKeyClaims(_ context.Context, _ string, keyType keymanager.KeyType) (*keymanager.KeyClaims, error) {
-	if keyType != keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY {
-		return nil, fmt.Errorf("unsupported key type: %v", keyType)
-	}
-	return &keymanager.KeyClaims{
-		Claims: &keymanager.KeyClaims_VmKeyClaims{
-			VmKeyClaims: &keymanager.KeyClaims_VmProtectionKeyClaims{},
-		},
-	}, nil
 }

@@ -21,7 +21,6 @@ import (
 	"buf.build/go/protovalidate"
 
 	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
 
 	api "github.com/GoogleCloudPlatform/key-protection-module/workload_service/proto"
 	"github.com/google/uuid"
@@ -378,21 +377,6 @@ func New(_ context.Context, socketPath string, mode keymanager.KeyProtectionMech
 	return s, nil
 }
 
-func handleRoutingError(ctx context.Context, mux *runtime.ServeMux, marshaler runtime.Marshaler, w http.ResponseWriter, r *http.Request, httpStatus int) {
-	if httpStatus != http.StatusMethodNotAllowed {
-		runtime.DefaultRoutingErrorHandler(ctx, mux, marshaler, w, r, httpStatus)
-		return
-	}
-
-	// Use HTTPStatusError to customize the DefaultHTTPErrorHandler status code
-	err := &runtime.HTTPStatusError{
-		HTTPStatus: httpStatus,
-		Err:        status.Error(codes.Unimplemented, http.StatusText(httpStatus)),
-	}
-
-	runtime.DefaultHTTPErrorHandler(ctx, mux, marshaler, w, r, err)
-}
-
 func customHTTPErrorHandler(_ context.Context, _ *runtime.ServeMux, _ runtime.Marshaler, w http.ResponseWriter, _ *http.Request, err error) {
 	st := status.Convert(err)
 	w.Header().Set("Content-Type", "application/json")
@@ -400,13 +384,6 @@ func customHTTPErrorHandler(_ context.Context, _ *runtime.ServeMux, _ runtime.Ma
 	if err := json.NewEncoder(w).Encode(map[string]string{"error": st.Message()}); err != nil {
 		log.Printf("Warning: failed to encode error response: %v", err)
 	}
-}
-
-func customForwardResponse(_ context.Context, w http.ResponseWriter, resp proto.Message) error {
-	if _, ok := resp.(*api.DestroyResponse); ok {
-		w.WriteHeader(http.StatusNoContent)
-	}
-	return nil
 }
 
 func grpcCodeFromError(err error) codes.Code {
@@ -504,8 +481,6 @@ func initRESTGatewayProxy(restSocketPath string, conn *grpc.ClientConn) (*http.S
 	mux := runtime.NewServeMux(
 		// Intercept gRPC status errors and serialize them back into the legacy {"error": "<message>"} JSON layout
 		runtime.WithErrorHandler(customHTTPErrorHandler),
-		// Customize successful responses (e.g. return HTTP 204 No Content for DestroyResponse)
-		runtime.WithForwardResponseOption(customForwardResponse),
 		// Preserve original snake_case protobuf field casing and enforce inclusion of empty structures unconditionally
 		runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{
 			MarshalOptions: protojson.MarshalOptions{
@@ -513,8 +488,6 @@ func initRESTGatewayProxy(restSocketPath string, conn *grpc.ClientConn) (*http.S
 				EmitUnpopulated: true,
 			},
 		}),
-		// Handle unmapped HTTP/REST routing path and method mismatches securely
-		runtime.WithRoutingErrorHandler(handleRoutingError),
 	)
 
 	if err := api.RegisterWorkloadServiceHandler(context.Background(), mux, conn); err != nil {

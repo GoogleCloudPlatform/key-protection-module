@@ -53,8 +53,8 @@ steps:
       - -c
       - |
         set -exuo pipefail
-        cd keymanager/attestation_service/example/server
-        go build -o ../../../../image/attestation_agent -ldflags="-X 'main.BuildCommit=${SHORT_SHA}'"
+        cd keymanager/attestation_service/server
+        go build -o ../../../image/attestation_agent -ldflags="-X 'main.BuildCommit=${SHORT_SHA}'"
   - name: "alpine"
     id: "PrepareOEMInstallDir"
     entrypoint: "sh"

@@ -201,8 +201,8 @@ func TestIntegrationDestroyKey(t *testing.T) {
 	wDestroy := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(wDestroy, reqDestroy)
 
-	if wDestroy.Code != http.StatusNoContent {
-		t.Fatalf("expected destroy status 204, got %d: %s", wDestroy.Code, wDestroy.Body.String())
+	if wDestroy.Code != http.StatusOK {
+		t.Fatalf("expected destroy status 200, got %d: %s", wDestroy.Code, wDestroy.Body.String())
 	}
 
 	// 3. Verify mapping is gone
@@ -262,8 +262,8 @@ func TestIntegrationAutoDestroy(t *testing.T) {
 	srv.Handler().ServeHTTP(wDestroy, reqDestroy)
 
 	// In the real system, it gracefully handles destruction and cleans up the KOL mapping.
-	if wDestroy.Code != http.StatusNoContent {
-		t.Fatalf("expected destroy status 204 or some success, got %d: %s", wDestroy.Code, wDestroy.Body.String())
+	if wDestroy.Code != http.StatusOK {
+		t.Fatalf("expected destroy status 200 or some success, got %d: %s", wDestroy.Code, wDestroy.Body.String())
 	}
 }
 

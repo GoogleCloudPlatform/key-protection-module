@@ -390,8 +390,8 @@ func TestHandleGenerateKeyInvalidMethod(t *testing.T) {
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
-	if w.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("expected status 405, got %d", w.Code)
+	if w.Code != http.StatusNotImplemented {
+		t.Fatalf("expected status 501, got %d", w.Code)
 	}
 }
 
@@ -720,8 +720,8 @@ func TestHandleEnumerateKeysMethodNotAllowed(t *testing.T) {
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
-	if w.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("expected status 405, got %d", w.Code)
+	if w.Code != http.StatusNotImplemented {
+		t.Fatalf("expected status 501, got %d", w.Code)
 	}
 }
 
@@ -1075,8 +1075,8 @@ func TestHandleGetCapabilitiesInvalidMethod(t *testing.T) {
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
-	if w.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("expected status 405, got %d", w.Code)
+	if w.Code != http.StatusNotImplemented {
+		t.Fatalf("expected status 501, got %d", w.Code)
 	}
 }
 
@@ -1108,7 +1108,7 @@ func TestHandleDestroy(t *testing.T) {
 			method:                 http.MethodPost,
 			body:                   validDestroyBody(validKEMUUID.String()),
 			setupMap:               true,
-			expectedStatus:         http.StatusNoContent,
+			expectedStatus:         http.StatusOK,
 			expectKEMDestroyed:     true,
 			expectBindingDestroyed: true,
 			expectMapRemoved:       true,
@@ -1117,7 +1117,7 @@ func TestHandleDestroy(t *testing.T) {
 			name:           "invalid method",
 			method:         http.MethodGet,
 			body:           nil,
-			expectedStatus: http.StatusMethodNotAllowed,
+			expectedStatus: http.StatusNotImplemented,
 		},
 		{
 			name:           "bad json",
@@ -1329,8 +1329,8 @@ func TestHandleDecapsMethodNotAllowed(t *testing.T) {
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
-	if w.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("expected status 405, got %d", w.Code)
+	if w.Code != http.StatusNotImplemented {
+		t.Fatalf("expected status 501, got %d", w.Code)
 	}
 }
 
