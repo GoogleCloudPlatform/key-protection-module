@@ -13,64 +13,68 @@
 # limitations under the License.
 substitutions:
   # Logical defaults for image naming
-  _IMAGE_NAME: 'key-protection-module'
-  _IMAGE_NAME_TEST: 'kpm-test-workload'
+  _IMAGE_NAME: "key-protection-module"
+  _IMAGE_NAME_TEST: "kpm-test-workload"
   # Functional defaults for tagging; overridden by triggers
-  _IMAGE_TAG: 'latest'
+  _IMAGE_TAG: "latest"
   # Infrastructure defaults; typically overridden by Cloud Build triggers
-  _REPO_NAME: ''
-  _ZONE: ''
+  _REPO_NAME: ""
+  _ZONE: ""
+
+  _CS_PROJECT_ID: "confidential-space-images-dev"
+  _CS_REPO_LOCATION: "us"
+  _CS_REPO_NAME: "key-protection-module-images"
 
 steps:
   # Fetch git submodules
-  - name: 'gcr.io/cloud-builders/git'
+  - name: "gcr.io/cloud-builders/git"
     id: FetchSubmodules
-    args: ['submodule', 'update', '--init', '--recursive']
+    args: ["submodule", "update", "--init", "--recursive"]
 
   # Build the production container image
-  - name: 'gcr.io/cloud-builders/docker'
+  - name: "gcr.io/cloud-builders/docker"
     id: BuildAgentImage
-    waitFor: ['FetchSubmodules']
+    waitFor: ["FetchSubmodules"]
     args:
-      - 'build'
-      - '-t'
-      - '${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA}'
-      - '.'
+      - "build"
+      - "-t"
+      - "${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA}"
+      - "."
     env:
-      - 'DOCKER_BUILDKIT=1'
+      - "DOCKER_BUILDKIT=1"
 
   # Build the test workload image
-  - name: 'gcr.io/cloud-builders/docker'
+  - name: "gcr.io/cloud-builders/docker"
     id: BuildTestImage
-    waitFor: ['FetchSubmodules']
+    waitFor: ["FetchSubmodules"]
     args:
-      - 'build'
-      - '-f'
-      - 'tests/Dockerfile.test'
-      - '-t'
-      - '${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME_TEST}:${SHORT_SHA}'
-      - '.'
+      - "build"
+      - "-f"
+      - "tests/Dockerfile.test"
+      - "-t"
+      - "${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME_TEST}:${SHORT_SHA}"
+      - "."
     env:
-      - 'DOCKER_BUILDKIT=1'
+      - "DOCKER_BUILDKIT=1"
 
   # Push both images to Artifact Registry
-  - name: 'gcr.io/cloud-builders/docker'
+  - name: "gcr.io/cloud-builders/docker"
     id: PushImages
-    waitFor: ['BuildAgentImage', 'BuildTestImage']
-    entrypoint: 'bash'
+    waitFor: ["BuildAgentImage", "BuildTestImage"]
+    entrypoint: "bash"
     args:
-      - '-c'
+      - "-c"
       - |
         docker push ${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA}
         docker push ${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME_TEST}:${SHORT_SHA}
 
   # Create a GCE VM for tests
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
     id: CreateTestVM
-    waitFor: ['PushImages']
-    entrypoint: 'bash'
+    waitFor: ["PushImages"]
+    entrypoint: "bash"
     args:
-      - '-c'
+      - "-c"
       - |
         gcloud compute instances create "kpm-test-vm-${BUILD_ID}" \
           --zone="${_ZONE}" \
@@ -85,12 +89,12 @@ steps:
           --metadata="location=${LOCATION},test_image=${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME_TEST}:${SHORT_SHA}"
 
   # Monitor tests and cleanup
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
     id: MonitorEmulatedVMProtectionTests
-    waitFor: ['CreateTestVM']
-    entrypoint: 'bash'
+    waitFor: ["CreateTestVM"]
+    entrypoint: "bash"
     args:
-      - '-c'
+      - "-c"
       - |
         VM_NAME="kpm-test-vm-${BUILD_ID}"
         ZONE="${_ZONE}"
@@ -98,14 +102,13 @@ steps:
         trap 'echo "Cleaning up VM..."; gcloud compute instances delete "$${VM_NAME}" --zone="$${ZONE}" --quiet || true' EXIT
         ./scripts/vm-test-monitor.sh "$${VM_NAME}" "$${ZONE}"
 
-
   # Create KPS VM for gRPC API end-to-end test
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
     id: CreateKpsGrpcApiVM
-    waitFor: ['PushImages']
-    entrypoint: 'bash'
+    waitFor: ["PushImages"]
+    entrypoint: "bash"
     args:
-      - '-c'
+      - "-c"
       - |
         VM_NAME="kpm-grpc-api-kps-${BUILD_ID}"
         ZONE="${_ZONE}"
@@ -128,12 +131,12 @@ steps:
         echo "gRPC API KPS VM IP: $(cat /workspace/grpc_api_kps_ip.txt)"
 
   # Create gRPC API test VM (runs the WSD agent + drives endpoints against remote KPS)
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
     id: CreateGrpcApiTestVM
-    waitFor: ['CreateKpsGrpcApiVM']
-    entrypoint: 'bash'
+    waitFor: ["CreateKpsGrpcApiVM"]
+    entrypoint: "bash"
     args:
-      - '-c'
+      - "-c"
       - |
         VM_NAME="kpm-grpc-api-test-${BUILD_ID}"
         ZONE="${_ZONE}"
@@ -151,12 +154,12 @@ steps:
           --metadata="location=${LOCATION},test_image=${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME_TEST}:${SHORT_SHA},docker_env=KPS_IP=$${KPS_IP},test_command=bash /app/tests/run_grpc_wsd_e2e.sh"
 
   # Monitor gRPC API tests and cleanup both VMs
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
     id: MonitorVMProtectionTests
-    waitFor: ['CreateGrpcApiTestVM']
-    entrypoint: 'bash'
+    waitFor: ["CreateGrpcApiTestVM"]
+    entrypoint: "bash"
     args:
-      - '-c'
+      - "-c"
       - |
         KPS_VM="kpm-grpc-api-kps-${BUILD_ID}"
         WSD_VM="kpm-grpc-api-test-${BUILD_ID}"
@@ -168,12 +171,12 @@ steps:
         ./scripts/vm-test-monitor.sh "$${WSD_VM}" "$${ZONE}"
 
   # Create a GCE VM for schema contract tests (reusing the test image with custom command)
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
     id: CreateSchemaTestVM
-    waitFor: ['PushImages']
-    entrypoint: 'bash'
+    waitFor: ["PushImages"]
+    entrypoint: "bash"
     args:
-      - '-c'
+      - "-c"
       - |
         gcloud compute instances create "kpm-schema-test-vm-${BUILD_ID}" \
           --zone="${_ZONE}" \
@@ -188,12 +191,12 @@ steps:
           --metadata="location=${LOCATION},test_image=${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME_TEST}:${SHORT_SHA},test_command=bash /app/tests/run_schema_tests.sh"
 
   # Monitor schema tests and cleanup
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
     id: MonitorSchemaVMTests
-    waitFor: ['CreateSchemaTestVM']
-    entrypoint: 'bash'
+    waitFor: ["CreateSchemaTestVM"]
+    entrypoint: "bash"
     args:
-      - '-c'
+      - "-c"
       - |
         VM_NAME="kpm-schema-test-vm-${BUILD_ID}"
         ZONE="${_ZONE}"
@@ -201,46 +204,66 @@ steps:
         ./scripts/vm-test-monitor.sh "$${VM_NAME}" "$${ZONE}"
 
   # Final validation: Containerized socket check for the production image
-  - name: 'gcr.io/cloud-builders/docker'
+  - name: "gcr.io/cloud-builders/docker"
     id: FinalSocketCheck
-    waitFor: ['MonitorEmulatedVMProtectionTests', 'MonitorSchemaVMTests', 'MonitorVMProtectionTests']
+    waitFor:
+      [
+        "MonitorEmulatedVMProtectionTests",
+        "MonitorSchemaVMTests",
+        "MonitorVMProtectionTests",
+      ]
 
-    entrypoint: 'bash'
+    entrypoint: "bash"
     args:
-      - '-c'
+      - "-c"
       - |
         mkdir -p /workspace/socket
         docker run -d --name agent-verify \
           -v /workspace/socket:/run/container_launcher \
           '${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA}'
-        
+
         # Wait for socket
         timeout 30s bash -c 'until [ -S /workspace/socket/kmaserver.sock ]; do sleep 1; done'
-        
+
         # Basic API probe
         docker run --rm --user root \
           -v /workspace/socket:/socket \
           curlimages/curl:latest -s --unix-socket /socket/kmaserver.sock http://localhost/v1/capabilities \
           | grep "KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256"
-        
+
         docker rm -f agent-verify
 
   # Final step: Tag verified image as latest and push
-  - name: 'gcr.io/cloud-builders/docker'
+  - name: "gcr.io/cloud-builders/docker"
     id: ReleaseLatest
-    waitFor: ['FinalSocketCheck']
-    entrypoint: 'bash'
+    waitFor: ["FinalSocketCheck"]
+    entrypoint: "bash"
     args:
-      - '-c'
+      - "-c"
       - |
         docker tag ${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA} ${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${_IMAGE_TAG}
         docker push ${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${_IMAGE_TAG}
 
+  - name: "gcr.io/cloud-builders/docker"
+    id: ReleaseToCSRegistry
+    waitFor: ["FinalSocketCheck"]
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - |
+        # Tag and push SHA versioned image
+        docker tag ${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA} ${_CS_REPO_LOCATION}-docker.pkg.dev/${_CS_PROJECT_ID}/${_CS_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA}
+        docker push ${_CS_REPO_LOCATION}-docker.pkg.dev/${_CS_PROJECT_ID}/${_CS_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA}
+
+        # Tag and push 'latest' versioned image
+        docker tag ${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA} ${_CS_REPO_LOCATION}-docker.pkg.dev/${_CS_PROJECT_ID}/${_CS_REPO_NAME}/${_IMAGE_NAME}:${_IMAGE_TAG}
+        docker push ${_CS_REPO_LOCATION}-docker.pkg.dev/${_CS_PROJECT_ID}/${_CS_REPO_NAME}/${_IMAGE_NAME}:${_IMAGE_TAG}
+
 images:
-  - '${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA}'
-  - '${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${_IMAGE_TAG}'
+  - "${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA}"
+  - "${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${_IMAGE_TAG}"
 
 options:
   logging: CLOUD_LOGGING_ONLY
   # Use a larger machine from the standard pool for intensive Rust compilation
-  machineType: 'E2_HIGHCPU_32'
+  machineType: "E2_HIGHCPU_32"
