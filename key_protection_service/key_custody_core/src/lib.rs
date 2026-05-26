@@ -906,7 +906,8 @@ mod tests {
                 binding_public_key: binding_pk.clone(),
             },
         };
-        let binding_record = km_common::key_types::KeyRecord::new_for_testing(binding_meta, binding_sk);
+        let binding_record =
+            km_common::key_types::KeyRecord::new_for_testing(binding_meta, binding_sk);
 
         let recovered_shared_secret = binding_record
             .with_private_key(|priv_key_ref| {

@@ -337,7 +337,9 @@ mod tests {
 
         // Prepare spy mapping to check for zeroization after drop
         let fd = removed.private_key.as_raw_fd();
-        let len = removed.private_key.with_secret(|secret_bytes| secret_bytes.len());
+        let len = removed
+            .private_key
+            .with_secret(|secret_bytes| secret_bytes.len());
 
         let spy = unsafe {
             let fd_dup = libc::dup(fd);

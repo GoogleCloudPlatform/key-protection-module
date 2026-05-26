@@ -209,11 +209,13 @@ mod tests {
         let (_sender_ctx, enc) = hpke::SenderContext::new(&params, pk_r.as_bytes(), b"")
             .expect("HPKE setup sender failed");
 
-        let result = sk_r.with_secret(|raw_key| {
-            let sk_ref = PrivateKeyRef::X25519(X25519PrivateKeyRef(raw_key));
-            decaps(&sk_ref, &enc)
-        }).expect("Decaps wrapper failed");
-        
+        let result = sk_r
+            .with_secret(|raw_key| {
+                let sk_ref = PrivateKeyRef::X25519(X25519PrivateKeyRef(raw_key));
+                decaps(&sk_ref, &enc)
+            })
+            .expect("Decaps wrapper failed");
+
         assert_eq!(result.as_slice().len(), 32);
     }
 
@@ -261,10 +263,12 @@ mod tests {
             .expect("HPKE setup sender failed");
         let ciphertext = sender_ctx.seal(pt, aad);
 
-        let decrypted = sk_r.with_secret(|raw_key| {
-            let sk_ref = PrivateKeyRef::X25519(X25519PrivateKeyRef(raw_key));
-            hpke_open(&sk_ref, &enc, &ciphertext, aad, &hpke_algo)
-        }).expect("Decryption failed");
+        let decrypted = sk_r
+            .with_secret(|raw_key| {
+                let sk_ref = PrivateKeyRef::X25519(X25519PrivateKeyRef(raw_key));
+                hpke_open(&sk_ref, &enc, &ciphertext, aad, &hpke_algo)
+            })
+            .expect("Decryption failed");
 
         assert_eq!(decrypted.as_slice(), pt);
     }
@@ -359,11 +363,13 @@ mod tests {
         let (enc, ciphertext) = hpke_seal(&pk_r, &pt, aad, &hpke_algo).expect("HPKE seal failed");
 
         // Decrypt to verify
-        let decrypted = sk_r.with_secret(|raw_key| {
-            let sk_ref = PrivateKeyRef::X25519(X25519PrivateKeyRef(raw_key));
-            hpke_open(&sk_ref, &enc, &ciphertext, aad, &hpke_algo)
-        }).expect("Decryption failed");
-        
+        let decrypted = sk_r
+            .with_secret(|raw_key| {
+                let sk_ref = PrivateKeyRef::X25519(X25519PrivateKeyRef(raw_key));
+                hpke_open(&sk_ref, &enc, &ciphertext, aad, &hpke_algo)
+            })
+            .expect("Decryption failed");
+
         assert_eq!(decrypted.as_slice(), pt.as_slice());
     }
 

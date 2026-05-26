@@ -87,6 +87,11 @@ impl Vault {
 
     /// Conceptually unsafe wrapper executing a closure with mutable access to the secure region.
     /// Allows zero-copy initialization.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that any raw pointers or FFI calls writing into the mutable slice
+    /// do not write out of bounds. The slice length is guaranteed to be exactly the initialized size.
     pub unsafe fn write_secret<F, T>(&mut self, f: F) -> T
     where
         F: FnOnce(&mut [u8]) -> T,

@@ -4,9 +4,9 @@ use crate::crypto::secret_box::SecretBox;
 use crate::crypto::{PrivateKeyOps, PublicKeyOps, Status};
 use crate::protected_mem::Vault;
 use crate::proto::{AeadAlgorithm, HpkeAlgorithm, KdfAlgorithm, KemAlgorithm};
-use bssl_crypto::{hkdf, hpke};
 #[cfg(any(test, feature = "test-utils"))]
 use bssl_crypto::x25519;
+use bssl_crypto::{hkdf, hpke};
 /// X25519-based public key implementation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct X25519PublicKey(pub(crate) [u8; 32]);
