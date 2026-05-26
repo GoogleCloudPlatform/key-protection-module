@@ -53,6 +53,13 @@ impl Vault {
     /// Returns an error if the `memfd_secret` syscall fails or if the memory
     /// cannot be mapped.
     pub fn new(data: SecretBox) -> IoResult<Self> {
+        let mut vault = Self::new_empty(data.as_slice().len())?;
+        vault.mmap.copy_from_slice(data.as_slice());
+        Ok(vault)
+    }
+
+    /// Creates a new empty `Vault` of the specified size.
+    pub fn new_empty(len: usize) -> IoResult<Self> {
         // Create the secret memory file descriptor.
         // O_CLOEXEC ensures the FD is closed on exec.
         let fd = unsafe { libc::syscall(SYS_MEMFD_SECRET, libc::O_CLOEXEC as libc::c_long) };
@@ -66,13 +73,10 @@ impl Vault {
         let file = unsafe { File::from_raw_fd(fd) };
 
         // Set the size of the secret memory region.
-        file.set_len(data.as_slice().len() as u64)?;
+        file.set_len(len as u64)?;
 
         // Map the secret memory region into the process's address space.
-        let mut mmap = unsafe { MmapMut::map_mut(&file)? };
-
-        // Copy the sensitive data into the secure region.
-        mmap.copy_from_slice(data.as_slice());
+        let mmap = unsafe { MmapMut::map_mut(&file)? };
 
         Ok(Vault {
             mmap,
@@ -81,9 +85,22 @@ impl Vault {
         })
     }
 
-    /// Returns a new SecretBox containing a copy of the secret key material.
-    pub fn get_secret(&self) -> SecretBox {
-        SecretBox::new(self.mmap.to_vec())
+    /// Conceptually unsafe wrapper executing a closure with mutable access to the secure region.
+    /// Allows zero-copy initialization.
+    pub unsafe fn write_secret<F, T>(&mut self, f: F) -> T
+    where
+        F: FnOnce(&mut [u8]) -> T,
+    {
+        f(&mut self.mmap[..])
+    }
+
+    /// Executes a closure with a temporary view of the secret key material.
+    /// The secret key material is not copied and remains inside the secure region.
+    pub fn with_secret<F, T>(&self, f: F) -> T
+    where
+        F: FnOnce(&[u8]) -> T,
+    {
+        f(&self.mmap[..])
     }
 }
 
@@ -98,14 +115,18 @@ mod tests {
         let original_data = data;
         let secret = SecretBox::new(data.to_vec());
         let vault = Vault::new(secret).expect("Failed to create vault");
-        assert_eq!(vault.get_secret().as_slice(), &original_data);
+        vault.with_secret(|secret_bytes| {
+            assert_eq!(secret_bytes, &original_data);
+        });
     }
 
     #[test]
     fn test_vault_with_empty_data() {
         let secret = SecretBox::new(vec![]);
         let vault = Vault::new(secret).expect("Failed to create empty vault");
-        assert!(vault.get_secret().as_slice().is_empty());
+        vault.with_secret(|secret_bytes| {
+            assert!(secret_bytes.is_empty());
+        });
     }
 
     #[test]
@@ -114,9 +135,13 @@ mod tests {
         let v1 = Vault::new(SecretBox::new(s1.to_vec())).unwrap();
         let s2 = *b"secret2";
         let v2 = Vault::new(SecretBox::new(s2.to_vec())).unwrap();
-        assert_ne!(v1.get_secret().as_slice(), v2.get_secret().as_slice());
-        assert_eq!(v1.get_secret().as_slice(), b"secret1");
-        assert_eq!(v2.get_secret().as_slice(), b"secret2");
+        v1.with_secret(|s1_bytes| {
+            v2.with_secret(|s2_bytes| {
+                assert_ne!(s1_bytes, s2_bytes);
+                assert_eq!(s1_bytes, b"secret1");
+                assert_eq!(s2_bytes, b"secret2");
+            });
+        });
     }
 
     #[test]
@@ -124,7 +149,9 @@ mod tests {
         let data = vec![0u8; 1024 * 1024]; // 1MB
         let len = data.len();
         let vault = Vault::new(SecretBox::new(data)).expect("Failed to create large vault");
-        assert_eq!(vault.get_secret().as_slice().len(), len);
+        vault.with_secret(|secret_bytes| {
+            assert_eq!(secret_bytes.len(), len);
+        });
     }
 
     #[test]

@@ -217,6 +217,7 @@ name = "km_common"
 version = "0.1.0"
 dependencies = [
  "bssl-crypto",
+ "bssl-sys",
  "clear_on_drop",
  "hex",
  "libc",

@@ -20,6 +20,7 @@ memmap2 = "0.9.9"
 thiserror = "2.0"
 clear_on_drop = "0.2"
 bssl-crypto = { path = "third_party/bssl-crypto" }
+bssl-sys = { path = "third_party/bssl-sys" }
 hex = "0.4"
 prost-build = "0.13"
 protoc-bin-vendored = "3.2.0"

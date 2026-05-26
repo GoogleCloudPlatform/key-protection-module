@@ -1,5 +1,5 @@
 use crate::crypto;
-use crate::crypto::{PublicKey, secret_box};
+use crate::crypto::PublicKey;
 use crate::protected_mem::Vault;
 use crate::proto::{AeadAlgorithm, HpkeAlgorithm, KdfAlgorithm, KemAlgorithm};
 use std::collections::HashMap;
@@ -135,9 +135,21 @@ impl KeyRegistry {
 }
 
 impl KeyRecord {
-    /// Returns the private key material.
-    pub fn get_private_key(&self) -> crypto::PrivateKey {
-        crypto::PrivateKey::from(self.private_key.get_secret())
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn new_for_testing(meta: KeyMetadata, private_key: Vault) -> Self {
+        Self { meta, private_key }
+    }
+
+    /// Executes a closure with a borrowed, secure view of the private key.
+    /// The private key remains confined inside the secure region.
+    pub fn with_private_key<F, T>(&self, f: F) -> T
+    where
+        F: FnOnce(&crypto::PrivateKeyRef) -> T,
+    {
+        self.private_key.with_secret(|raw_key| {
+            let priv_key_ref = crypto::PrivateKeyRef::X25519(crypto::X25519PrivateKeyRef(raw_key));
+            f(&priv_key_ref)
+        })
     }
 
     /// Creates a new long-term Binding key.
@@ -194,11 +206,9 @@ impl KeyRecord {
             return Err(crate::Status::UnsupportedAlgorithm);
         };
 
-        let (pub_key, priv_key) = crypto::generate_keypair(KemAlgorithm::DhkemX25519HkdfSha256)?;
+        let (pub_key, vault) = crypto::generate_keypair(KemAlgorithm::DhkemX25519HkdfSha256)?;
 
         let id = Uuid::new_v4();
-        let vault = Vault::new(secret_box::SecretBox::from(priv_key))
-            .map_err(|_| crate::Status::CryptoError)?;
 
         let now = Instant::now();
         let delete_after = now
@@ -327,7 +337,7 @@ mod tests {
 
         // Prepare spy mapping to check for zeroization after drop
         let fd = removed.private_key.as_raw_fd();
-        let len = removed.private_key.get_secret().as_slice().len();
+        let len = removed.private_key.with_secret(|secret_bytes| secret_bytes.len());
 
         let spy = unsafe {
             let fd_dup = libc::dup(fd);
@@ -336,7 +346,9 @@ mod tests {
         };
 
         // Verify spy sees the data before drop
-        assert_eq!(&spy[..len], removed.private_key.get_secret().as_slice());
+        removed.private_key.with_secret(|secret_bytes| {
+            assert_eq!(&spy[..len], secret_bytes);
+        });
         assert!(!spy[..len].iter().all(|&b| b == 0));
 
         drop(removed);
