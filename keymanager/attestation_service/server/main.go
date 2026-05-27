@@ -14,8 +14,6 @@ import (
 	"github.com/GoogleCloudPlatform/key-protection-module/keymanager/attestation_service"
 	keymanager "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto"
 	"github.com/google/go-tpm-tools/agent"
-	"github.com/google/go-tpm-tools/client"
-	"github.com/google/go-tpm/legacy/tpm2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -32,15 +30,8 @@ func main() {
 	defer lis.Close()
 
 	ctx := context.Background()
-	exps := agent.Experiments{EnableAttestationEvidence: true}
-	// TODO: skip TPM initialization in BC mode.
-	tpm, err := tpm2.OpenTPM("/dev/tpmrm0")
-	if err != nil {
-		log.Fatalf("failed to open TPM: %v", err)
-	}
-	defer tpm.Close()
-
-	attestAgent, err := agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, nil, nil, nil, exps, &simpleLogger{}, nil, nil)
+	exps := agent.Experiments{EnableAttestationEvidence: true, BcMode: true}
+	attestAgent, err := agent.CreateAttestationAgent(nil, nil, nil, nil, nil, exps, &simpleLogger{}, nil, nil)
 	if err != nil {
 		log.Fatalf("failed to create attestation agent: %v", err)
 	}
