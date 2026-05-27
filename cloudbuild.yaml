@@ -21,6 +21,11 @@ substitutions:
   _REPO_NAME: ''
   _ZONE: ''
 
+
+  _CS_PROJECT_ID: ''
+  _CS_REPO_LOCATION: 'us'
+  _CS_REPO_NAME: 'key-protection-module-images'
+
 steps:
   # Fetch git submodules
   - name: 'gcr.io/cloud-builders/git'
@@ -236,9 +241,26 @@ steps:
         docker tag ${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA} ${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${_IMAGE_TAG}
         docker push ${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${_IMAGE_TAG}
 
+  - name: 'gcr.io/cloud-builders/docker'
+    id: ReleaseToCSRegistry
+    waitFor: ['FinalSocketCheck']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        # Tag and push SHA versioned image
+        docker tag ${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA} ${_CS_REPO_LOCATION}-docker.pkg.dev/${_CS_PROJECT_ID}/${_CS_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA}
+        docker push ${_CS_REPO_LOCATION}-docker.pkg.dev/${_CS_PROJECT_ID}/${_CS_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA}
+
+        # Tag and push 'latest' versioned image
+        docker tag ${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA} ${_CS_REPO_LOCATION}-docker.pkg.dev/${_CS_PROJECT_ID}/${_CS_REPO_NAME}/${_IMAGE_NAME}:${_IMAGE_TAG}
+        docker push ${_CS_REPO_LOCATION}-docker.pkg.dev/${_CS_PROJECT_ID}/${_CS_REPO_NAME}/${_IMAGE_NAME}:${_IMAGE_TAG}
+
 images:
   - '${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA}'
   - '${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${_IMAGE_TAG}'
+  - '${_CS_REPO_LOCATION}-docker.pkg.dev/${_CS_PROJECT_ID}/${_CS_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA}'
+  - '${_CS_REPO_LOCATION}-docker.pkg.dev/${_CS_PROJECT_ID}/${_CS_REPO_NAME}/${_IMAGE_NAME}:${_IMAGE_TAG}'
 
 options:
   logging: CLOUD_LOGGING_ONLY
