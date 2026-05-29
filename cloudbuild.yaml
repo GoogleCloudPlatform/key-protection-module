@@ -26,6 +26,7 @@ substitutions:
   _CS_REPO_LOCATION: 'us'
   _CS_REPO_NAME: 'key-protection-module-images'
   _ACOS_IMAGE_TRIGGER_TOPIC: ''
+  _ACOS_IMAGE_FLOW_ID: ''
 
 steps:
   # Fetch git submodules
@@ -269,12 +270,12 @@ steps:
           echo "Not on main branch (BRANCH_NAME=$${BRANCH_NAME}), skipping downstream CI trigger."
           exit 0
         fi
-        if [[ -z "${_ACOS_IMAGE_TRIGGER_TOPIC}" ]]; then
-          echo "No downstream topic provided, skipping trigger."
+        if [[ -z "${_ACOS_IMAGE_TRIGGER_TOPIC}" ]] || [[ -z "${_ACOS_IMAGE_FLOW_ID}" ]]; then
+          echo "No downstream topic or flow ID provided, skipping trigger."
           exit 0
         fi
         gcloud pubsub topics publish projects/${PROJECT_ID}/topics/${_ACOS_IMAGE_TRIGGER_TOPIC} \
-          --message='{"flow": "kps-acos-image-flow", "gitParameters": {"commitSha": "${SHORT_SHA}"}}'
+          --message='{"flow": "${_ACOS_IMAGE_FLOW_ID}", "gitParameters": {"commitSha": "${SHORT_SHA}"}}'
 
 images:
   - '${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA}'
