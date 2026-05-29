@@ -30,8 +30,8 @@ main() {
     systemctl restart systemd-networkd
   fi
 
-  # Allow incoming TCP packets on port 50050 for KPS.
-  iptables -I INPUT -d 192.168.100.3 -p tcp --dport 50050 -j ACCEPT
+  # Allow incoming TCP packets on port 50050 for KPS and 50051 for attestation service.
+  iptables -I INPUT -d 192.168.100.3 -p tcp  -m multiport --dports 50050,50051 -j ACCEPT
 
   systemctl daemon-reload
   systemctl enable keymanager.service
