@@ -13,14 +13,27 @@
 # limitations under the License.
 
 substitutions:
+  "_BASE_IMAGE": ""
+  "_BASE_IMAGE_PROJECT": ""
   "_OUTPUT_IMAGE_NAME": ""
   "_OUTPUT_IMAGE_PROJECT": ""
-  "_BASE_IMAGE_GCS_DIR": ""
+  "_OUTPUT_IMAGE_FAMILY": ""
+  "_BUCKET_NAME": ""
   "_IMAGE_ENV": ""
   "_KPS_DOCKER_IMAGE_REF": ""
-  "_OUTPUT_IMAGE_GCS_DIR": ""
 
 steps:
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    id: "ExportBaseImage"
+    args:
+      - "gcloud"
+      - "compute"
+      - "images"
+      - "export"
+      - "--image=${_BASE_IMAGE}"
+      - "--image-project=${_BASE_IMAGE_PROJECT}"
+      - "--destination-uri=gs://${_BUCKET_NAME}/kps-acos-build-${BUILD_ID}/${_BASE_IMAGE}.tar.gz"
+
   - name: "gcr.io/cloud-builders/gcloud"
     id: "DownloadBaseImageFromGCS"
     entrypoint: "gcloud"
@@ -28,12 +41,14 @@ steps:
       [
         "storage",
         "cp",
-        "${_BASE_IMAGE_GCS_DIR}/chromiumos_base_image_gce.tar.gz",
+        "gs://${_BUCKET_NAME}/kps-acos-build-${BUILD_ID}/${_BASE_IMAGE}.tar.gz",
         "./src_image.tar.gz",
       ]
+
   - name: "ubuntu"
     id: "ExtractRawBaseImage"
     args: ["tar", "-xzf", "./src_image.tar.gz"]
+
   - name: "gcr.io/cloud-builders/docker"
     id: "SaveKPSContainerImage"
     entrypoint: "bash"
@@ -44,6 +59,7 @@ steps:
         docker pull ${_KPS_DOCKER_IMAGE_REF}
         mkdir -p /workspace/kps_image
         docker save ${_KPS_DOCKER_IMAGE_REF} -o /workspace/kps_image/image.tar
+
   - name: golang:1.25-rc-bullseye
     id: BuildAttestationService
     env:
@@ -55,6 +71,7 @@ steps:
         set -exuo pipefail
         cd keymanager/attestation_service/server
         go build -o ../../../image/attestation_agent -ldflags="-X 'main.BuildCommit=${SHORT_SHA}'"
+
   - name: "alpine"
     id: "PrepareOEMInstallDir"
     entrypoint: "sh"
@@ -71,6 +88,7 @@ steps:
         cp ./image/attestation_agent /workspace/oem-install/kps/attestation_agent
         cp ./image/exit_script.sh /workspace/oem-install/kps/exit_script.sh
         cp ./image/kps_runner.sh /workspace/oem-install/kps/kps_runner.sh
+        cp ./image/network_setup.sh /workspace/oem-install/kps/network_setup.sh
 
         if [ -f /workspace/kps_image/image.tar ]; then
             cp /workspace/kps_image/image.tar /workspace/oem-install/kps/image.tar
@@ -86,17 +104,32 @@ steps:
         chmod +x /workspace/oem-install/entrypoint.sh || true
         chmod +x /workspace/oem-install/kps/exit_script.sh || true
         chmod +x /workspace/oem-install/kps/attestation_agent || true
+        chmod +x /workspace/oem-install/kps/network_setup.sh || true
 
   - name: "gcr.io/cloud-builders/gcloud"
     id: "DownloadVmlinux"
-    entrypoint: "gcloud"
+    entrypoint: "bash"
+    env:
+      - "BASE_IMAGE=${_BASE_IMAGE}"
+      - "IMAGE_ENV=${_IMAGE_ENV}"
     args:
-      [
-        "storage",
-        "cp",
-        "gs://cos-tools/19216.220.185/cchostdebug-amd64-gcp/vmlinux",
-        "./vmlinux",
-      ]
+      - "-c"
+      - |
+        set -ex
+        VERSION=$$(echo "$${BASE_IMAGE}" | grep -oE '[0-9]+-[0-9]+-[0-9]+$$' | tr '-' '.')
+        if [[ -z "$${VERSION}" ]]; then
+          echo "Failed to extract version from $${BASE_IMAGE}"
+          exit 1
+        fi
+
+        if [[ "$${IMAGE_ENV}" == "debug" ]]; then
+          TARGET="cchostdebug-amd64-gcp"
+        else
+          TARGET="cchost-amd64-gcp"
+        fi
+
+        gcloud storage cp "gs://cos-tools/$${VERSION}/$${TARGET}/vmlinux" ./vmlinux
+
   - name: "gcr.io/cos-cloud/oem-preloader:latest"
     id: "RunOEMPreloader"
     env:
@@ -121,15 +154,29 @@ steps:
           "s|cros_efi|cros_efi systemd.mask=konlet-startup.service|g"
           "s|cros_efi|cros_efi systemd.mask=update-engine.service|g"
           "s|cros_efi|cros_efi confidential-space.hardened=false|g"
+          "s|cros_efi|cros_efi systemd.mask=gcr-wait-online.service|g"
+          "s|cros_efi|cros_efi systemd.mask=systemd-networkd-wait-online.service|g"
+          "s|cros_efi|cros_efi systemd.mask=cloud-init.service|g"
+          "s|cros_efi|cros_efi systemd.mask=cloud-init-local.service|g"
+          "s|cros_efi|cros_efi systemd.mask=cloud-config.service|g"
+          "s|cros_efi|cros_efi systemd.mask=cloud-final.service|g"
+          "s|cros_efi|cros_efi systemd.mask=get-cloud-api-domains.service|g"
+          "s|cros_efi|cros_efi systemd.mask=google-guest-agent-manager.service|g"
+          "s|cros_efi|cros_efi systemd.mask=google-guest-compat-manager.service|g"
         )
 
         HARDENED_COMMANDS=(
           "s|cros_efi|cros_efi systemd.wants=basic.target|g"
           "s|cros_efi|cros_efi systemd.wants=systemd-resolved.service|g"
-          "s|cros_efi|cros_efi systemd.wants=network-online.target|g"
-          "s|cros_efi|cros_efi systemd.wants=gcr-online.target|g"
-          # Disabled because no cloud-init
-          # "s|cros_efi|cros_efi systemd.unit=cloud-final.service|g"
+          "s|cros_efi|cros_efi systemd.mask=gcr-wait-online.service|g"
+          "s|cros_efi|cros_efi systemd.mask=systemd-networkd-wait-online.service|g"
+          "s|cros_efi|cros_efi systemd.mask=cloud-init.service|g"
+          "s|cros_efi|cros_efi systemd.mask=cloud-init-local.service|g"
+          "s|cros_efi|cros_efi systemd.mask=cloud-config.service|g"
+          "s|cros_efi|cros_efi systemd.mask=cloud-final.service|g"
+          "s|cros_efi|cros_efi systemd.mask=get-cloud-api-domains.service|g"
+          "s|cros_efi|cros_efi systemd.mask=google-guest-agent-manager.service|g"
+          "s|cros_efi|cros_efi systemd.mask=google-guest-compat-manager.service|g"
           "s|cros_efi|cros_efi systemd.mask=var-lib-docker.mount|g"
           "s|cros_efi|cros_efi systemd.mask=docker.service|g"
           "s|cros_efi|cros_efi systemd.mask=google-guest-agent.service|g"
@@ -170,12 +217,15 @@ steps:
         fi
 
         "$${CMD[@]}"
+
   - name: "alpine"
     id: "RenameOutputImage"
     args: ["mv", "output.bin", "disk.raw"]
+
   - name: "alpine"
     id: "TarOutputImage"
     args: ["tar", "-zcf", "./out_image.tar.gz", "disk.raw"]
+
   - name: "gcr.io/cloud-builders/gcloud"
     id: "UploadToGCS"
     entrypoint: "gcloud"
@@ -184,20 +234,53 @@ steps:
         "storage",
         "cp",
         "./out_image.tar.gz",
-        "${_OUTPUT_IMAGE_GCS_DIR}/${_OUTPUT_IMAGE_NAME}.tar.gz",
+        "gs://${_BUCKET_NAME}/kps-acos-build-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz",
       ]
-  - name: "gcr.io/cloud-builders/gcloud"
+
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    id: "FetchBaseImageFeatures"
+    entrypoint: "sh"
+    args:
+      - "-c"
+      - |
+        gcloud compute images describe ${_BASE_IMAGE} --project=${_BASE_IMAGE_PROJECT} --format="value(guestOsFeatures.type)" | paste -sd, - | tr ';' ',' | tr -d '\n' > /workspace/features.txt
+        sed -i 's/SECURE_BOOT//g' /workspace/features.txt
+        sed -i 's/,,/,/g' /workspace/features.txt
+        sed -i 's/^,//; s/,$//' /workspace/features.txt
+
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
     id: "CreateGCEImage"
+    entrypoint: "sh"
+    args:
+      - "-c"
+      - |
+        FEATURES=$$(cat /workspace/features.txt)
+        if [ -z "$$FEATURES" ]; then
+          FEATURES="UEFI_COMPATIBLE"
+        fi
+        if gcloud compute images describe ${_OUTPUT_IMAGE_NAME} --project=${_OUTPUT_IMAGE_PROJECT} > /dev/null 2>&1; then
+          echo "Result image ${_OUTPUT_IMAGE_NAME} already exists in project. Exiting."
+          exit 0
+        fi
+        gcloud compute images create ${_OUTPUT_IMAGE_NAME} \
+          --project=${_OUTPUT_IMAGE_PROJECT} \
+          --family=${_OUTPUT_IMAGE_FAMILY} \
+          --source-uri=gs://${_BUCKET_NAME}/kps-acos-build-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz \
+          --guest-os-features="$$FEATURES"
+
+  - name: "gcr.io/cloud-builders/gcloud"
+    id: "RemoveGCSFiles"
     entrypoint: "gcloud"
     args:
       [
-        "compute",
-        "images",
-        "create",
-        "${_OUTPUT_IMAGE_NAME}",
-        "--source-uri",
-        "${_OUTPUT_IMAGE_GCS_DIR}/${_OUTPUT_IMAGE_NAME}.tar.gz",
-        "--project",
-        "${_OUTPUT_IMAGE_PROJECT}",
-        "--guest-os-features=GVNIC,IDPF,VIRTIO_SCSI_MULTIQUEUE,UEFI_COMPATIBLE,TDX_CAPABLE,SEV_CAPABLE,SEV_LIVE_MIGRATABLE_V2,SEV_SNP_CAPABLE,SEV_LIVE_MIGRATABLE",
+        "storage",
+        "rm",
+        "gs://${_BUCKET_NAME}/kps-acos-build-${BUILD_ID}/${_BASE_IMAGE}.tar.gz",
+        "gs://${_BUCKET_NAME}/kps-acos-build-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz",
       ]
+
+timeout: "3000s"
+
+options:
+  machine_type: "E2_HIGHCPU_32"
+  dynamic_substitutions: true
