@@ -84,14 +84,38 @@ func TestGetKeyEndorsement_GRPC(t *testing.T) {
 		timeoutOverride time.Duration
 	}{
 		{
-			name: "Success",
+			name: "Success_WithAcpiData",
 			req: &pb.GetKeyEndorsementRequest{
-				Challenge: []byte("test-challenge"),
-				KeyHandle: &keymanager.KeyHandle{Handle: "test-handle"},
+				Challenge:       []byte("test-challenge"),
+				KeyHandle:       &keymanager.KeyHandle{Handle: "test-handle"},
+				RequestAcpiData: true,
 			},
-			agentFn: func(_ context.Context, challenge []byte, _ []byte, _ agent.AttestAgentOpts) (*attestationpb.VmAttestation, error) {
+			agentFn: func(_ context.Context, challenge []byte, _ []byte, opts agent.AttestAgentOpts) (*attestationpb.VmAttestation, error) {
 				if string(challenge) != "test-challenge" {
 					t.Errorf("expected challenge 'test-challenge', got %q", string(challenge))
+				}
+				if opts.AcpiOpts == nil || !opts.AcpiOpts.RetrieveAcpiData {
+					t.Errorf("expected RetrieveAcpiData to be true, got %v", opts.AcpiOpts)
+				}
+				return expectedEvidence, nil
+			},
+			kpsFn:        defaultKPSFn,
+			wantCode:     codes.OK,
+			wantEvidence: expectedEvidence,
+		},
+		{
+			name: "Success_WithoutAcpiData",
+			req: &pb.GetKeyEndorsementRequest{
+				Challenge:       []byte("test-challenge"),
+				KeyHandle:       &keymanager.KeyHandle{Handle: "test-handle"},
+				RequestAcpiData: false,
+			},
+			agentFn: func(_ context.Context, challenge []byte, _ []byte, opts agent.AttestAgentOpts) (*attestationpb.VmAttestation, error) {
+				if string(challenge) != "test-challenge" {
+					t.Errorf("expected challenge 'test-challenge', got %q", string(challenge))
+				}
+				if opts.AcpiOpts != nil && opts.AcpiOpts.RetrieveAcpiData {
+					t.Errorf("expected RetrieveAcpiData to be false, got true")
 				}
 				return expectedEvidence, nil
 			},
