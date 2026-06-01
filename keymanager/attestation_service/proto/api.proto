@@ -11,6 +11,7 @@ import "attestation.proto";
 message GetKeyEndorsementRequest {
   bytes challenge = 1;
   keymanager.KeyHandle key_handle = 2;
+  bool request_acpi_data = 3;
 }
 
 message GetKeyEndorsementResponse {

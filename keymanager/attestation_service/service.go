@@ -69,7 +69,13 @@ func (h *handler) GetKeyEndorsement(ctx context.Context, req *pb.GetKeyEndorseme
 		return nil, status.Error(codes.Internal, fmt.Sprintf("failed to marshal KEM key claims: %v", err))
 	}
 
-	kemEvidence, err := h.AttestationAgent.AttestationEvidence(ctx, req.Challenge, kemBytes, agent.AttestAgentOpts{})
+	attestOpts := agent.AttestAgentOpts{
+		AcpiOpts: &agent.AcpiOpts{
+			RetrieveAcpiData: req.GetRequestAcpiData(),
+		},
+	}
+
+	kemEvidence, err := h.AttestationAgent.AttestationEvidence(ctx, req.Challenge, kemBytes, attestOpts)
 	if err != nil {
 		return nil, status.Error(codes.Internal, fmt.Sprintf("failed to collect attestation evidence with KEM key claims: %v", err))
 	}
