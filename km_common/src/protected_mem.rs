@@ -232,4 +232,20 @@ mod tests {
             "Memory was not zeroed after drop"
         );
     }
+
+    #[test]
+    fn test_vault_empty_write_retrieval() {
+        let mut vault = Vault::new_empty(32).expect("Failed to create empty vault");
+        let data = *b"0123456789abcdef0123456789abcdef";
+
+        unsafe {
+            vault.write_secret(|vault_mut_slice| {
+                vault_mut_slice.copy_from_slice(&data);
+            });
+        }
+
+        vault.with_secret(|secret_bytes| {
+            assert_eq!(secret_bytes, &data);
+        });
+    }
 }

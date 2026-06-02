@@ -221,68 +221,16 @@ fn labeled_expand(
     Ok(SecretBox::new(result))
 }
 
-/// A scope-managed raw EVP_HPKE_KEY wrapper to guarantee zeroization on drop.
-struct ScopedEvpHpkeKey(bssl_sys::EVP_HPKE_KEY);
-
-impl ScopedEvpHpkeKey {
-    /// Allocates and generates a new raw EVP_HPKE_KEY.
-    fn generate(kem: *const bssl_sys::EVP_HPKE_KEM) -> Result<Self, Status> {
-        let mut key = unsafe { std::mem::zeroed::<bssl_sys::EVP_HPKE_KEY>() };
-        unsafe { bssl_sys::EVP_HPKE_KEY_zero(&mut key) };
-
-        let ret = unsafe { bssl_sys::EVP_HPKE_KEY_generate(&mut key, kem) };
-        if ret != 1 {
-            return Err(Status::CryptoError);
-        }
-        Ok(ScopedEvpHpkeKey(key))
-    }
-
-    /// Extracts the public key from the internal key structure.
-    fn public_key(&self) -> Result<[u8; 32], Status> {
-        let mut pub_key = [0u8; 32];
-        let mut len = 0usize;
-        let ret = unsafe {
-            bssl_sys::EVP_HPKE_KEY_public_key(&self.0, pub_key.as_mut_ptr(), &mut len, 32)
-        };
-        if ret != 1 || len != 32 {
-            return Err(Status::CryptoError);
-        }
-        Ok(pub_key)
-    }
-
-    /// Extracts the private key directly into the Vault, bypassing standard heap re-allocations.
-    fn private_key_into(&self, vault: &mut Vault) -> Result<(), Status> {
-        let mut len = 0usize;
-        let ret = unsafe {
-            vault.write_secret(|vault_mut_slice| {
-                bssl_sys::EVP_HPKE_KEY_private_key(
-                    &self.0,
-                    vault_mut_slice.as_mut_ptr(),
-                    &mut len,
-                    32,
-                )
-            })
-        };
-        if ret != 1 || len != 32 {
-            return Err(Status::CryptoError);
-        }
-        Ok(())
-    }
-}
-
-impl Drop for ScopedEvpHpkeKey {
-    fn drop(&mut self) {
-        unsafe { bssl_sys::EVP_HPKE_KEY_cleanup(&mut self.0) };
-    }
-}
-
 /// Generates a new X25519 keypair directly inside Vault (memfd_secret).
 pub(crate) fn generate_keypair() -> Result<(X25519PublicKey, Vault), Status> {
-    let key = ScopedEvpHpkeKey::generate(unsafe { bssl_sys::EVP_hpke_x25519_hkdf_sha256() })?;
-    let pub_key_bytes = key.public_key()?;
-
+    let mut pub_key_bytes = [0u8; 32];
     let mut vault = Vault::new_empty(32).map_err(|_| Status::CryptoError)?;
-    key.private_key_into(&mut vault)?;
+
+    unsafe {
+        vault.write_secret(|vault_mut_slice| {
+            bssl_sys::X25519_keypair(pub_key_bytes.as_mut_ptr(), vault_mut_slice.as_mut_ptr());
+        });
+    }
 
     Ok((X25519PublicKey(pub_key_bytes), vault))
 }
@@ -398,6 +346,39 @@ mod tests {
             hex::encode(shared_secret.as_slice()),
             expected_shared_secret_hex,
             "Shared secret mismatch"
+        );
+    }
+
+    #[test]
+    fn test_generate_keypair_roundtrip() {
+        let (pub_key, vault) = generate_keypair().expect("Failed to generate keypair");
+
+        // Verify public key matches private key
+        vault.with_secret(|priv_key_bytes| {
+            let mut derived_pub = [0u8; 32];
+            unsafe {
+                bssl_sys::X25519_public_from_private(
+                    derived_pub.as_mut_ptr(),
+                    priv_key_bytes.as_ptr(),
+                );
+            }
+            assert_eq!(
+                pub_key.0, derived_pub,
+                "Public key does not match private key"
+            );
+        });
+
+        // Verify decapsulation works
+        let (shared_secret_sender, enc) = pub_key.encap_internal(None).expect("Failed to encap");
+
+        let shared_secret_receiver = vault.with_secret(|priv_key_bytes| {
+            let sk_ref = X25519PrivateKeyRef(priv_key_bytes);
+            sk_ref.decaps_internal(&enc).expect("Failed to decaps")
+        });
+
+        assert_eq!(
+            shared_secret_sender.as_slice(),
+            shared_secret_receiver.as_slice()
         );
     }
 }
