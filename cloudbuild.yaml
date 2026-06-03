@@ -267,7 +267,7 @@ steps:
       - '-c'
       - |
         if [[ "${BRANCH_NAME}" != "main" ]]; then
-          echo "Not on main branch (BRANCH_NAME=$${BRANCH_NAME}), skipping downstream CI trigger."
+          echo "Not on main branch (BRANCH_NAME=${BRANCH_NAME}), skipping downstream CI trigger."
           exit 0
         fi
         if [[ -z "${_ACOS_IMAGE_TRIGGER_TOPIC}" ]] || [[ -z "${_ACOS_IMAGE_FLOW_ID}" ]]; then
