@@ -103,7 +103,7 @@ steps:
         ZONE="${_ZONE}"
         # Ensure cleanup on exit
         trap 'echo "Cleaning up VM..."; gcloud compute instances delete "$${VM_NAME}" --zone="$${ZONE}" --quiet || true' EXIT
-        ./scripts/vm-test-monitor.sh "$${VM_NAME}" "$${ZONE}" || true
+        ./scripts/vm-test-monitor.sh "$${VM_NAME}" "$${ZONE}"
 
 
   # Create KPS VM for gRPC API end-to-end test
@@ -266,6 +266,10 @@ steps:
     args:
       - '-c'
       - |
+        if [[ "${BRANCH_NAME}" != "main" ]]; then
+          echo "Not on main branch (BRANCH_NAME=$${BRANCH_NAME}), skipping downstream CI trigger."
+          exit 0
+        fi
         if [[ -z "${_ACOS_IMAGE_TRIGGER_TOPIC}" ]] || [[ -z "${_ACOS_IMAGE_FLOW_ID}" ]]; then
           echo "No downstream topic or flow ID provided, skipping trigger."
           exit 0
