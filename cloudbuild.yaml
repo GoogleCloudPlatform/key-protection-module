@@ -266,16 +266,12 @@ steps:
     args:
       - '-c'
       - |
-        if [[ "${BRANCH_NAME}" != "main" ]]; then
-          echo "Not on main branch (BRANCH_NAME=${BRANCH_NAME}), skipping downstream CI trigger."
-          exit 0
-        fi
         if [[ -z "${_ACOS_IMAGE_TRIGGER_TOPIC}" ]] || [[ -z "${_ACOS_IMAGE_FLOW_ID}" ]]; then
           echo "No downstream topic or flow ID provided, skipping trigger."
           exit 0
         fi
         gcloud pubsub topics publish projects/${PROJECT_ID}/topics/${_ACOS_IMAGE_TRIGGER_TOPIC} \
-          --message='{"flow": "${_ACOS_IMAGE_FLOW_ID}", "gitParameters": {"commitSha": "${SHORT_SHA}"}}'
+          --message='{"flow": "${_ACOS_IMAGE_FLOW_ID}", "parameters": {"_OVERWRITE_REF_SHA": "${SHORT_SHA}"}, "gitParameters": {"commitSha": "${SHORT_SHA}"}}'
 
 images:
   - '${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA}'
