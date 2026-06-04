@@ -55,6 +55,21 @@ The build process involves generating protobuf code, FFI headers, building the R
    cargo build --release --workspace
    ```
 
+4. **Build Go Binaries:**
+
+   ```bash
+   # Make sure that the Rust library paths are correctly configured for CGO.
+   go build ./...
+   ```
+
+### Docker Build
+
+To build the complete Key Protection Module (including both Rust and Go layers) as a Docker container, run:
+
+```bash
+docker build -t key-protection-module .
+```
+
 ## Development Conventions
 
 ### Code Style
