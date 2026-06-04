@@ -3,11 +3,9 @@ module github.com/GoogleCloudPlatform/key-protection-module/keymanager/attestati
 go 1.24.13
 
 require (
-	github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260410183711-07bdbfebb244
+	github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260513001127-5adc77d41486
 	github.com/GoogleCloudPlatform/key-protection-module v0.0.0-20260513054212-f2adec2162e7
-	github.com/google/go-tpm v0.9.8
-	github.com/google/go-tpm-tools v0.4.9-0.20260325175049-22911efba9e5
-	github.com/google/go-tpm-tools/agent v0.0.0-20260424173438-cf6db90d8918
+	github.com/google/go-tpm-tools/agent v0.0.0-20260522205405-ed0161beaf76
 	google.golang.org/grpc v1.80.0
 	google.golang.org/protobuf v1.36.11
 )
@@ -24,15 +22,19 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
 	github.com/google/go-configfs-tsm v0.3.3-0.20240919001351-b4b5b84fdcbc // indirect
-	github.com/google/go-eventlog v0.0.3-0.20260305053119-5cd85087f9f9 // indirect
+	github.com/google/go-eventlog v0.0.3-0.20260416001248-6807b85eecf0 // indirect
 	github.com/google/go-sev-guest v0.14.0 // indirect
 	github.com/google/go-tdx-guest v0.3.2-0.20250814004405-ffb0869e6f4d // indirect
+	github.com/google/go-tpm v0.9.8 // indirect
+	github.com/google/go-tpm-tools v0.4.9-0.20260325175049-22911efba9e5 // indirect
 	github.com/google/go-tpm-tools/verifier v0.4.4 // indirect
 	github.com/google/logger v1.1.1 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.11 // indirect
 	github.com/googleapis/gax-go/v2 v2.17.0 // indirect
+	github.com/mdlayher/socket v0.4.1 // indirect
+	github.com/mdlayher/vsock v1.2.1 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.61.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.61.0 // indirect

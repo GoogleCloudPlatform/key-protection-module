@@ -39,4 +39,4 @@ if ctr container info "$CONTAINER_NAME" >/dev/null 2>&1; then
     ctr container rm "$CONTAINER_NAME"
 fi
 
-ctr run --rm -net-host --mount "type=bind,src=/tmp/container_launcher/,dst=/run/container_launcher/,options=rbind:rw" --env SERVICE_ROLE="KPS" --env KEY_PROTECTION_MECHANISM="KEY_PROTECTION_VM" "$IMAGE_REF" "$CONTAINER_NAME"
+ctr run --rm -net-host --mount "type=bind,src=/tmp/container_launcher/,dst=/run/container_launcher/,options=rbind:rw" --env SERVICE_ROLE="SERVICE_ROLE_KPS" --env KEY_PROTECTION_MECHANISM="KEY_PROTECTION_VM" "$IMAGE_REF" "$CONTAINER_NAME"
