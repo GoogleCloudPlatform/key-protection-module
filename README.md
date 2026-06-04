@@ -1,52 +1,109 @@
-# New Project Template
+# Key Protection Module (KPM)
 
-This repository contains a template that can be used to seed a repository for a
-new Google open source project.
+The Key Protection Module (KPM) provides a secure infrastructure for managing cryptographic keys.
 
-See https://opensource.google/documentation/reference/releasing for more information about
-releasing a new Google open source project.
+## Project Overview
 
-This template uses the Apache license, as is Google's default.  See the
-documentation for instructions on using alternate license.
+KPM consists of two primary layers:
 
-## How to use this template
+- **Key Orchestration Layer (KOL):** Written in **Go**, this layer provides gRPC services for key management and high-level orchestration.
+- **Key Custody Core (KCC):** Written in **Rust**, this layer handles sensitive cryptographic operations and key storage in protected memory. It uses **BoringSSL** (via `bssl-crypto`) for underlying cryptography.
 
-1. Clone it from GitHub.
-    * There is no reason to fork it.
-1. Create a new local repository and copy the files from this repo into it.
-1. Modify README.md and docs/contributing.md to represent your project, not the
-   template project.
-1. Develop your new project!
+The Go layer communicates with the Rust layer via **FFI (Foreign Function Interface)** using CGO.
 
-``` shell
-git clone https://github.com/google/new-project
-mkdir my-new-thing
-cd my-new-thing
-git init
-cp -r ../new-project/* ../new-project/.github .
-git add *
-git commit -a -m 'Boilerplate for new Google open source project'
+## Architecture
+
+### Component Breakdown
+
+- `key_protection_service/`: Implements the KPS gRPC service and its corresponding KCC FFI bindings.
+- `workload_service/`: Implements the Workload gRPC service and its corresponding KCC FFI bindings.
+- `km_common/`: Shared Rust library containing protobuf definitions, cryptographic wrappers, and protected memory management.
+- `third_party/bssl-crypto/`: A Rust wrapper for BoringSSL, providing safe cryptographic primitives.
+- `boringssl/`: Submodule containing the BoringSSL source code.
+
+## Building and Running
+
+### Prerequisites
+
+- Go 1.24+
+- Rust 2024 edition
+- `cbindgen` (for generating FFI headers)
+- `bindgen-cli` (ensure `$HOME/.cargo/bin` is in your `PATH`)
+- `cmake` (for building BoringSSL)
+- `buf` (for Go protobuf generation)
+
+### Build Steps
+
+The build process involves generating protobuf code, FFI headers, building the Rust libraries, and then building/testing the Go services.
+
+1. **Generate Protobuf Code:**
+   - **Go:**
+     ```bash
+     ./gen_keymanager.sh
+     ```
+   - **Rust:** Handled automatically during `cargo build` via `prost-build`.
+
+2. **Generate FFI Headers:**
+
+   ```bash
+   ./generate_ffi_headers.sh
+   ```
+
+3. **Build Rust Workspace:**
+
+   ```bash
+   cargo build --release --workspace
+   ```
+
+4. **Build Go Binaries:**
+
+   ```bash
+   # Make sure that the Rust library paths are correctly configured for CGO.
+   go build ./...
+   ```
+
+### Docker Build
+
+To build the complete Key Protection Module (including both Rust and Go layers) as a Docker container, run:
+
+```bash
+docker build -t key-protection-module .
 ```
 
-## Source Code Headers
+## Development Conventions
 
-Every file containing source code must include copyright and license
-information. This includes any JS/CSS files that you might be serving out to
-browsers. (This is to help well-intentioned people avoid accidental copying that
-doesn't comply with the license.)
+### Code Style
 
-Apache header:
+- **Go:** Follow standard Go idioms and `go fmt`.
+- **Rust:** Follow standard Rust idioms and `cargo fmt`.
 
-    Copyright 2024 Google LLC
+### Testing
 
-    Licensed under the Apache License, Version 2.0 (the "License");
-    you may not use this file except in compliance with the License.
-    You may obtain a copy of the License at
+- **Go Tests:**
 
-        https://www.apache.org/licenses/LICENSE-2.0
+  `go test ./...`
 
-    Unless required by applicable law or agreed to in writing, software
-    distributed under the License is distributed on an "AS IS" BASIS,
-    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-    See the License for the specific language governing permissions and
-    limitations under the License.
+  `go test -tags=integration ./...`
+
+- **Rust Tests:**
+
+  `cargo test`
+
+## How to Contribute
+
+To make a new contribution, please follow these steps:
+
+1. Fork the repository on GitHub.
+2. Clone your forked repository with submodules:
+   ```shell
+   git clone --recurse-submodules <your-forked-repository-url>
+   ```
+3. Create a new branch for your changes:
+   ```shell
+   git checkout -b your-feature-branch
+   ```
+4. Make your changes and ensure tests pass.
+5. Commit your changes with a descriptive message.
+6. Push your branch and open a Pull Request.
+
+Please ensure all source files include the appropriate copyright and license headers. See [`docs/contributing.md`](https://github.com/GoogleCloudPlatform/key-protection-module/blob/main/docs/contributing.md) for more details.
