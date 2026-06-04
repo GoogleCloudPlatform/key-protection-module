@@ -74,7 +74,7 @@ steps:
 
   - name: "alpine"
     id: "PrepareOEMInstallDir"
-    entrypoint: "sh"
+    entrypoint: "bash"
     args:
       - -c
       - |
@@ -239,10 +239,11 @@ steps:
 
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
     id: "FetchBaseImageFeatures"
-    entrypoint: "sh"
+    entrypoint: "bash"
     args:
       - "-c"
       - |
+        set -eo pipefail
         gcloud compute images describe ${_BASE_IMAGE} --project=${_BASE_IMAGE_PROJECT} --format="value(guestOsFeatures.type)" | paste -sd, - | tr ';' ',' | tr -d '\n' > /workspace/features.txt
         sed -i 's/SECURE_BOOT//g' /workspace/features.txt
         sed -i 's/,,/,/g' /workspace/features.txt
@@ -250,10 +251,11 @@ steps:
 
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
     id: "CreateGCEImage"
-    entrypoint: "sh"
+    entrypoint: "bash"
     args:
       - "-c"
       - |
+        set -eo pipefail
         FEATURES=$$(cat /workspace/features.txt)
         if [ -z "$$FEATURES" ]; then
           FEATURES="UEFI_COMPATIBLE"
@@ -276,7 +278,6 @@ steps:
         "storage",
         "rm",
         "gs://${_BUCKET_NAME}/kps-acos-build-${BUILD_ID}/${_BASE_IMAGE}.tar.gz",
-        "gs://${_BUCKET_NAME}/kps-acos-build-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz",
       ]
 
 timeout: "3000s"
