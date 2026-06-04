@@ -94,7 +94,7 @@ func TestRunKPS(t *testing.T) {
 
 	errChan := make(chan error, 1)
 	go func() {
-		errChan <- runKps(ctx, port)
+		errChan <- runKps(ctx, port, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM, keymanager.ServiceRole_SERVICE_ROLE_KPS)
 	}()
 
 	// Wait for the server to start by polling the port
@@ -132,7 +132,7 @@ func TestRunKPS_InvalidPort(t *testing.T) {
 	ctx := context.Background()
 
 	// Use an impossible port
-	err := runKps(ctx, -1)
+	err := runKps(ctx, -1, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM, keymanager.ServiceRole_SERVICE_ROLE_KPS)
 	if err == nil {
 		t.Fatal("Expected runKps() to return an error for invalid port")
 	}

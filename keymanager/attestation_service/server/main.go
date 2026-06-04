@@ -5,7 +5,6 @@ package main
 import (
 	"context"
 	"flag"
-	"github.com/google/go-tpm-tools/agent"
 	"log"
 	"net"
 	"os"
@@ -13,12 +12,15 @@ import (
 	"syscall"
 
 	"github.com/GoogleCloudPlatform/key-protection-module/keymanager/attestation_service"
-	"github.com/google/go-tpm-tools/client"
-	"github.com/google/go-tpm/legacy/tpm2"
+	keymanager "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto"
+	"github.com/google/go-tpm-tools/agent"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 func main() {
 	port := flag.String("port", ":50051", "TCP port to listen on")
+	kpsAddr := flag.String("kps-address", "localhost:50050", "Address of the Key Protection Service gRPC server")
 	flag.Parse()
 
 	lis, err := net.Listen("tcp", *port)
@@ -28,18 +30,20 @@ func main() {
 	defer lis.Close()
 
 	ctx := context.Background()
-	exps := agent.Experiments{EnableAttestationEvidence: true}
-	tpm, err := tpm2.OpenTPM("/dev/tpmrm0")
-	if err != nil {
-		log.Fatalf("failed to open TPM: %v", err)
-	}
-	defer tpm.Close()
-
-	attestAgent, err := agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, nil, nil, nil, exps, &simpleLogger{}, nil, nil)
+	exps := agent.Experiments{EnableAttestationEvidence: true, BcMode: true}
+	attestAgent, err := agent.CreateAttestationAgent(nil, nil, nil, nil, nil, exps, &simpleLogger{}, nil, nil)
 	if err != nil {
 		log.Fatalf("failed to create attestation agent: %v", err)
 	}
-	server := service.New(ctx, lis, attestAgent)
+
+	conn, err := grpc.NewClient(*kpsAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		log.Fatalf("failed to connect to KPS: %v", err)
+	}
+	defer conn.Close()
+	keyClaimsClient := keymanager.NewKeyClaimsServiceClient(conn)
+
+	server := service.New(ctx, lis, attestAgent, keyClaimsClient)
 
 	// Handle graceful shutdown
 	sigCh := make(chan os.Signal, 1)
@@ -54,6 +58,8 @@ func main() {
 	if err := server.Serve(); err != nil {
 		log.Fatalf("Failed to serve: %v", err)
 	}
+
+	log.Printf("Successfully started Attestation Service at port %s", *port)
 }
 
 type simpleLogger struct{}

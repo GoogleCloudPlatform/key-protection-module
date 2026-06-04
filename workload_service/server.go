@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -302,39 +303,20 @@ func (r *remoteKeyProtectionService) GetKEMKey(ctx context.Context, id uuid.UUID
 	return resp.GetKemPubKey().GetPublicKey(), resp.GetBindingPubKey().GetPublicKey(), resp.GetBindingPubKey().GetAlgorithm(), resp.GetRemainingLifespanSecs(), nil
 }
 
-// KeyClaimsProvider defines the interface for retrieving key claims.
-// This abstraction allows the underlying implementation to be a local channel
-// or a remote RPC call in future.
-type KeyClaimsProvider interface {
-	GetKeyClaims(ctx context.Context, keyHandle string, keyType keymanager.KeyType) (*keymanager.KeyClaims, error)
-}
-
-// ClaimsCall acts as the internal "envelope" for the channel.
-type ClaimsCall struct {
-	Ctx      context.Context
-	Request  *keymanager.GetKeyClaimsRequest
-	RespChan chan *ClaimsResult
-}
-
-// ClaimsResult wraps the protobuf response with an error.
-type ClaimsResult struct {
-	Reply *keymanager.KeyClaims
-	Err   error
-}
-
 // Server is the WSD HTTP server.
 type Server struct {
+	keymanager.UnimplementedKeyClaimsServiceServer
 	keyProtectionService KeyProtectionService
 	workloadService      WorkloadService
 	mu                   sync.RWMutex
 	kemToBindingMap      map[uuid.UUID]uuid.UUID
+	mode                 keymanager.KeyProtectionMechanism
 
-	claimsChan chan *ClaimsCall
-
-	httpServer *http.Server
-	listener   net.Listener
-	conn       *grpc.ClientConn
-
+	httpServer      *http.Server
+	httpListener    net.Listener
+	grpcServer      *grpc.Server
+	grpcListener    net.Listener
+	conn            *grpc.ClientConn
 	heartbeatCancel context.CancelFunc
 	initialBackoff  time.Duration
 	maxBackoff      time.Duration
@@ -343,12 +325,6 @@ type Server struct {
 }
 
 var (
-	// ClaimsResponseTimeout is the maximum time to wait for the caller to receive
-	// the result of a GetKeyClaims request before timing out.
-	ClaimsResponseTimeout = 5 * time.Second
-	// ClaimsRequestTimeout is the maximum time to wait for enqueuing the request to
-	// claims channel for getting the key claims.
-	ClaimsRequestTimeout = 5 * time.Second
 	// WsdReadHeaderTimeout is the maximum time allowed to read HTTP request headers.
 	// It is set to mitigate Slowloris attacks.
 	WsdReadHeaderTimeout = 5 * time.Second
@@ -388,7 +364,7 @@ func New(_ context.Context, socketPath string, mode keymanager.KeyProtectionMech
 	default:
 		return nil, fmt.Errorf("unknown key protection mechanism provided: %v", mode)
 	}
-	s, err := NewServer(kps, &workloadService{}, socketPath)
+	s, err := NewServer(kps, &workloadService{}, socketPath, mode)
 	if err != nil {
 		if conn != nil {
 			_ = conn.Close()
@@ -401,13 +377,13 @@ func New(_ context.Context, socketPath string, mode keymanager.KeyProtectionMech
 }
 
 // NewServer creates a new WSD server with the given dependencies.
-func NewServer(keyProtectionService KeyProtectionService, workloadService WorkloadService, socketPath string) (*Server, error) {
+func NewServer(keyProtectionService KeyProtectionService, workloadService WorkloadService, socketPath string, mode keymanager.KeyProtectionMechanism) (*Server, error) {
 	s := &Server{
 		keyProtectionService: keyProtectionService,
 		workloadService:      workloadService,
 		kemToBindingMap:      make(map[uuid.UUID]uuid.UUID),
 		mu:                   sync.RWMutex{},
-		claimsChan:           make(chan *ClaimsCall, 4),
+		mode:                 mode,
 		initialBackoff:       defaultInitialBackoff,
 		maxBackoff:           defaultMaxBackoff,
 		mechanism:            keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED,
@@ -429,9 +405,21 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 	if err != nil {
 		return nil, fmt.Errorf("failed to listen on unix socket %s: %w", socketPath, err)
 	}
-	s.listener = ln
+	s.httpListener = ln
 
-	go s.processClaims()
+	grpcSocketPath := strings.TrimSuffix(socketPath, filepath.Ext(socketPath)) + "-grpc.sock"
+	_ = os.Remove(grpcSocketPath)
+	grpcLis, err := net.Listen("unix", grpcSocketPath)
+	if err != nil {
+		_ = ln.Close()
+		return nil, fmt.Errorf("failed to listen on gRPC unix socket %s: %w", grpcSocketPath, err)
+	}
+
+	grpcSrv := grpc.NewServer()
+	keymanager.RegisterKeyClaimsServiceServer(grpcSrv, s)
+
+	s.grpcServer = grpcSrv
+	s.grpcListener = grpcLis
 
 	ctx, cancel := context.WithCancel(context.Background())
 	s.heartbeatCancel = cancel
@@ -442,7 +430,12 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 
 // Serve starts the HTTP server listening on the given unix socket path.
 func (s *Server) Serve() error {
-	if err := s.httpServer.Serve(s.listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	go func() {
+		if err := s.grpcServer.Serve(s.grpcListener); err != nil {
+			log.Printf("failed to serve WSD grpc server: %v", err)
+		}
+	}()
+	if err := s.httpServer.Serve(s.httpListener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("failed to serve WSD server: %w", err)
 	}
 	return nil
@@ -450,10 +443,24 @@ func (s *Server) Serve() error {
 
 // Shutdown gracefully shuts down the server.
 func (s *Server) Shutdown(ctx context.Context) error {
+	var errs []error
+	if s.grpcServer != nil {
+		shutdownDone := make(chan struct{})
+		go func() {
+			s.grpcServer.GracefulStop()
+			close(shutdownDone)
+		}()
+
+		select {
+		case <-ctx.Done():
+			s.grpcServer.Stop() // Force stop if context is cancelled
+			errs = append(errs, fmt.Errorf("WSD gRPC shutdown context cancelled: %w", ctx.Err()))
+		case <-shutdownDone:
+		}
+	}
 	if s.heartbeatCancel != nil {
 		s.heartbeatCancel()
 	}
-	var errs []error
 	if err := s.httpServer.Shutdown(ctx); err != nil {
 		errs = append(errs, err)
 	}
@@ -462,7 +469,6 @@ func (s *Server) Shutdown(ctx context.Context) error {
 			errs = append(errs, err)
 		}
 	}
-	close(s.claimsChan)
 	return errors.Join(errs...)
 }
 
@@ -850,27 +856,14 @@ func (s *Server) handleGetKEMKeyClaims(ctx context.Context, id uuid.UUID) (*keym
 	return claims, nil
 }
 
-// processClaims is a background worker that processes key claims requests from claimsChan.
-func (s *Server) processClaims() {
-	for call := range s.claimsChan {
-		result := s.handleGetClaims(call.Ctx, call.Request)
-
-		select {
-		case call.RespChan <- result:
-		case <-time.After(ClaimsResponseTimeout):
-			log.Printf("processClaims: timed out sending response for key %s", call.Request.GetKeyHandle().GetHandle())
-		}
-	}
-}
-
-// handleGetClaims processes a single GetKeyClaimsRequest and returns the result.
-func (s *Server) handleGetClaims(ctx context.Context, req *keymanager.GetKeyClaimsRequest) *ClaimsResult {
+// GetKeyClaims processes a single GetKeyClaimsRequest and returns the result.
+func (s *Server) GetKeyClaims(ctx context.Context, req *keymanager.GetKeyClaimsRequest) (*keymanager.KeyClaims, error) {
 	keyHandle := req.GetKeyHandle().GetHandle()
 	keyType := req.GetKeyType()
 
 	id, err := uuid.Parse(keyHandle)
 	if err != nil {
-		return &ClaimsResult{Err: fmt.Errorf("failed to retrieve key claims: %w", err)}
+		return nil, fmt.Errorf("failed to retrieve key claims: %w", err)
 	}
 
 	var claims *keymanager.KeyClaims
@@ -878,46 +871,22 @@ func (s *Server) handleGetClaims(ctx context.Context, req *keymanager.GetKeyClai
 	case keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING:
 		claims, err = s.handleGetBindingKeyClaims(id)
 		if err != nil {
-			return &ClaimsResult{Err: fmt.Errorf("failed to retrieve binding key claims: %w", err)}
+			return nil, fmt.Errorf("failed to retrieve binding key claims: %w", err)
 		}
 
 	case keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY:
+		if s.mode == keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM {
+			return nil, status.Errorf(codes.InvalidArgument, "KEM key claims must be retrieved directly from the KPS VM in KEY_PROTECTION_VM mode")
+		}
 		claims, err = s.handleGetKEMKeyClaims(ctx, id)
 		if err != nil {
-			return &ClaimsResult{Err: fmt.Errorf("failed to retrieve VM protection key claims: %w", err)}
+			return nil, fmt.Errorf("failed to retrieve VM protection key claims: %w", err)
 		}
 	default:
-		return &ClaimsResult{Err: fmt.Errorf("unsupported key type: %v", keyType)}
+		return nil, fmt.Errorf("unsupported key type: %v", keyType)
 	}
 
-	return &ClaimsResult{Reply: claims}
-}
-
-// GetKeyClaims enqueues request for getting key claims to claims channel.
-func (s *Server) GetKeyClaims(ctx context.Context, keyHandle string, keyType keymanager.KeyType) (*keymanager.KeyClaims, error) {
-	respChan := make(chan *ClaimsResult, 1)
-	req := &keymanager.GetKeyClaimsRequest{
-		KeyHandle: &keymanager.KeyHandle{Handle: keyHandle},
-		KeyType:   keyType,
-	}
-	select {
-	case s.claimsChan <- &ClaimsCall{Ctx: ctx, Request: req, RespChan: respChan}:
-	case <-ctx.Done():
-		return nil, fmt.Errorf("claims request context cancelled: %w", ctx.Err())
-	case <-time.After(ClaimsRequestTimeout):
-		return nil, fmt.Errorf("failed to send request: claims channel is full or worker is stuck")
-	}
-	select {
-	case result := <-respChan:
-		if result.Err != nil {
-			return nil, fmt.Errorf("worker error: %w", result.Err)
-		}
-		return result.Reply, nil
-	case <-ctx.Done():
-		return nil, fmt.Errorf("claims response context cancelled: %w", ctx.Err())
-	case <-time.After(ClaimsResponseTimeout):
-		return nil, fmt.Errorf("timed out waiting for processClaims to respond for key: %s", keyHandle)
-	}
+	return claims, nil
 }
 
 // startHeartbeat starts a background loop to send heartbeats to the KPS.

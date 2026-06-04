@@ -39,7 +39,7 @@ func FuzzHandleGenerateKey(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, data []byte) {
 		socketPath := filepath.Join(t.TempDir(), "fuzz.sock")
-		srv, err := NewServer(&keyProtectionService{}, &workloadService{}, socketPath)
+		srv, err := NewServer(&keyProtectionService{}, &workloadService{}, socketPath, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
 		if err != nil {
 			t.Fatalf("failed to create server: %v", err)
 		}
@@ -60,7 +60,7 @@ func FuzzHandleDecaps(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, data []byte) {
 		socketPath := filepath.Join(t.TempDir(), "fuzz_decap.sock")
-		srv, err := NewServer(&keyProtectionService{}, &workloadService{}, socketPath)
+		srv, err := NewServer(&keyProtectionService{}, &workloadService{}, socketPath, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
 		if err != nil {
 			t.Fatalf("failed to create server: %v", err)
 		}

@@ -63,7 +63,7 @@ func TestIntegrationGRPC_EndToEnd(t *testing.T) {
 	// 7. Start the WSD HTTP server (using the remoteKeyProtectionService)
 	// We use a mock WorkloadService since this test focuses on KPS integration.
 	mockWsd := &mockWorkloadService{uuid: uuid.New(), pubKey: []byte("thirty-two-bytes-of-dummy-pubkey")}
-	wsdServer, err := NewServer(remoteKps, mockWsd, filepath.Join(t.TempDir(), "test.sock"))
+	wsdServer, err := NewServer(remoteKps, mockWsd, filepath.Join(t.TempDir(), "test.sock"), keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
 	if err != nil {
 		t.Fatalf("failed to create wsd server: %v", err)
 	}
@@ -245,7 +245,7 @@ func setupGRPCRoundTrip(t *testing.T, stub kps.KeyProtectionService, kemUUID uui
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(sockDir) })
 
-	wsdServer, err := NewServer(remoteKps, mockWsd, filepath.Join(sockDir, "s"))
+	wsdServer, err := NewServer(remoteKps, mockWsd, filepath.Join(sockDir, "s"), keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
 	if err != nil {
 		t.Fatalf("failed to create wsd server: %v", err)
 	}
