@@ -74,7 +74,7 @@ steps:
 
   - name: "alpine"
     id: "PrepareOEMInstallDir"
-    entrypoint: "bash"
+    entrypoint: "sh"
     args:
       - -c
       - |
@@ -184,10 +184,10 @@ steps:
           "s|cros_efi|cros_efi systemd.mask=google-osconfig-agent.service|g"
           "s|cros_efi|cros_efi systemd.mask=google-startup-scripts.service|g"
           "s|cros_efi|cros_efi systemd.mask=google-shutdown-scripts.service|g"
-          "s|cros_efi|cros_efi systemd.mask=konlet-startup.service|g"
+          # "s|cros_efi|cros_efi systemd.mask=konlet-startup.service|g"
           "s|cros_efi|cros_efi systemd.mask=crash-reporter.service|g"
           "s|cros_efi|cros_efi systemd.mask=device_policy_manager.service|g"
-          "s|cros_efi|cros_efi systemd.mask=docker-events-collector-fluent-bit.service|g"
+          # "s|cros_efi|cros_efi systemd.mask=docker-events-collector-fluent-bit.service|g"
           "s|cros_efi|cros_efi systemd.mask=sshd.service|g"
           "s|cros_efi|cros_efi systemd.mask=var-lib-toolbox.mount|g"
           "s|cros_efi|cros_efi systemd.mask=update-engine.service|g"
