@@ -20,7 +20,7 @@ import (
 
 func main() {
 	port := flag.String("port", ":50051", "TCP port to listen on")
-	kpsAddr := flag.String("kps-address", "localhost:50050", "Address of the Key Protection Service gRPC server")
+	kpsAddr := flag.String("kps-address", "127.0.0.1:50050", "Address of the Key Protection Service gRPC server")
 	flag.Parse()
 
 	lis, err := net.Listen("tcp", *port)
