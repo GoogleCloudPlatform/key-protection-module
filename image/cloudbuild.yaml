@@ -21,6 +21,7 @@ substitutions:
   "_BUCKET_NAME": ""
   "_IMAGE_ENV": ""
   "_KPS_DOCKER_IMAGE_REF": ""
+  "_ZONE": ""
 
 steps:
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
@@ -33,6 +34,7 @@ steps:
       - "--image=${_BASE_IMAGE}"
       - "--image-project=${_BASE_IMAGE_PROJECT}"
       - "--destination-uri=gs://${_BUCKET_NAME}/kps-acos-build-${BUILD_ID}/${_BASE_IMAGE}.tar.gz"
+      - "--zone=${_ZONE}"
 
   - name: "gcr.io/cloud-builders/gcloud"
     id: "DownloadBaseImageFromGCS"
