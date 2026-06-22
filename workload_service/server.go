@@ -945,14 +945,13 @@ func (s *Server) performHeartbeat(ctx context.Context, client kpspb.KeyProtectio
 				timer.Stop()
 			}
 			token := resp.GetKpsBootToken()
-			if *cachedToken == "" {
-				*cachedToken = token
-				log.Printf("Heartbeat handshake successful, cached token: %s", token)
-			} else if *cachedToken != token {
-				log.Printf("Token mismatch! Cached: %s, Received: %s. Triggering cleanup.", *cachedToken, token)
+			if *cachedToken != "" && *cachedToken != token {
+				log.Println("Token mismatch! Triggering cleanup.")
 				s.cleanupState()
-				*cachedToken = token
+			} else {
+				log.Println("Heartbeat handshake successful.")
 			}
+			*cachedToken = token
 			return
 		}
 
