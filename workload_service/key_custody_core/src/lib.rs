@@ -148,8 +148,9 @@ fn open_internal(
         _ => return Err(Status::InternalError),
     };
 
-    let priv_key = record.get_private_key();
-    km_common::crypto::hpke_open(&priv_key, enc, ciphertext, aad, algo)
+    record.with_private_key(|priv_key_ref| {
+        km_common::crypto::hpke_open(priv_key_ref, enc, ciphertext, aad, algo)
+    })
 }
 
 /// Decrypts a ciphertext using the binding key associated with the given UUID.

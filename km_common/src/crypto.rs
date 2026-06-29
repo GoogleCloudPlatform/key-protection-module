@@ -1,10 +1,11 @@
+use crate::protected_mem::Vault;
 use crate::proto::{HpkeAlgorithm, KemAlgorithm, Status};
 pub mod secret_box;
 use crate::crypto::secret_box::SecretBox;
 use clear_on_drop::clear_stack_on_return;
 
 mod x25519;
-pub use x25519::{X25519PrivateKey, X25519PublicKey};
+pub use x25519::{X25519PrivateKeyRef, X25519PublicKey};
 
 const CLEAR_STACK_PAGES: usize = 2;
 
@@ -29,7 +30,7 @@ pub(crate) trait PublicKeyOps: Send + Sync {
     /// Otherwise, a random ephemeral key is generated.
     fn encap_internal(
         &self,
-        ephemeral_sk: Option<&PrivateKey>,
+        ephemeral_sk: Option<&PrivateKeyRef>,
     ) -> Result<(SecretBox, Vec<u8>), Status>;
 
     /// Returns the raw bytes of the public key.
@@ -94,7 +95,7 @@ impl PublicKeyOps for PublicKey {
     #[cfg(any(test, feature = "test-utils"))]
     fn encap_internal(
         &self,
-        ephemeral_sk: Option<&PrivateKey>,
+        ephemeral_sk: Option<&PrivateKeyRef>,
     ) -> Result<(SecretBox, Vec<u8>), Status> {
         match self {
             PublicKey::X25519(pk) => pk.encap_internal(ephemeral_sk),
@@ -106,29 +107,15 @@ impl PublicKeyOps for PublicKey {
     }
 }
 
-/// A wrapper enum for different private key types.
-pub enum PrivateKey {
-    X25519(X25519PrivateKey),
+/// A lifetime-bound borrowed private key.
+pub enum PrivateKeyRef<'a> {
+    X25519(X25519PrivateKeyRef<'a>),
 }
 
-impl From<SecretBox> for PrivateKey {
-    fn from(secret: SecretBox) -> Self {
-        PrivateKey::X25519(X25519PrivateKey(secret))
-    }
-}
-
-impl From<PrivateKey> for SecretBox {
-    fn from(key: PrivateKey) -> SecretBox {
-        match key {
-            PrivateKey::X25519(sk) => SecretBox::from(sk),
-        }
-    }
-}
-
-impl PrivateKeyOps for PrivateKey {
+impl<'a> PrivateKeyOps for PrivateKeyRef<'a> {
     fn decaps_internal(&self, enc: &[u8]) -> Result<SecretBox, Status> {
         match self {
-            PrivateKey::X25519(sk) => sk.decaps_internal(enc),
+            PrivateKeyRef::X25519(sk) => sk.decaps_internal(enc),
         }
     }
 
@@ -140,19 +127,20 @@ impl PrivateKeyOps for PrivateKey {
         algo: &HpkeAlgorithm,
     ) -> Result<SecretBox, Status> {
         match self {
-            PrivateKey::X25519(sk) => sk.hpke_open_internal(enc, ciphertext, aad, algo),
+            PrivateKeyRef::X25519(sk) => sk.hpke_open_internal(enc, ciphertext, aad, algo),
         }
     }
 }
 
 /// Generates a keypair for the given KEM algorithm.
+/// The private key is generated directly into the Vault, ensuring it never exits in unprotected memory.
 ///
-/// Returns a tuple containing the public and private keys respectively.
-pub fn generate_keypair(algo: KemAlgorithm) -> Result<(PublicKey, PrivateKey), Status> {
+/// Returns a tuple containing the public key and the Vault containing the private key respectively.
+pub fn generate_keypair(algo: KemAlgorithm) -> Result<(PublicKey, Vault), Status> {
     clear_stack_on_return(CLEAR_STACK_PAGES, || match algo {
         KemAlgorithm::DhkemX25519HkdfSha256 => {
-            let (pk, sk) = x25519::generate_keypair();
-            Ok((PublicKey::X25519(pk), PrivateKey::X25519(sk)))
+            let (pk, vault) = x25519::generate_keypair()?;
+            Ok((PublicKey::X25519(pk), vault))
         }
         _ => Err(Status::UnsupportedAlgorithm),
     })
@@ -166,18 +154,18 @@ pub fn encap(pub_key: &PublicKey) -> Result<(SecretBox, Vec<u8>), Status> {
     clear_stack_on_return(CLEAR_STACK_PAGES, || pub_key.encap_internal(None))
 }
 
-/// Decapsulates the shared secret from an encapsulated key using the specified private key.
+/// Decapsulates the shared secret from an encapsulated key using the specified private key reference.
 ///
 /// Returns the decapsulated shared secret as a `SecretBox`.
-pub fn decaps(priv_key: &PrivateKey, enc: &[u8]) -> Result<SecretBox, Status> {
+pub fn decaps(priv_key: &PrivateKeyRef, enc: &[u8]) -> Result<SecretBox, Status> {
     clear_stack_on_return(CLEAR_STACK_PAGES, || priv_key.decaps_internal(enc))
 }
 
-/// Decrypts a ciphertext using HPKE (Hybrid Public Key Encryption).
+/// Decrypts a ciphertext using HPKE (Hybrid Public Key Encryption) and a private key reference.
 ///
 /// Returns the decrypted plaintext as a `SecretBox`.
 pub fn hpke_open(
-    priv_key: &PrivateKey,
+    priv_key: &PrivateKeyRef,
     enc: &[u8],
     ciphertext: &[u8],
     aad: &[u8],
@@ -221,7 +209,14 @@ mod tests {
         let (_sender_ctx, enc) = hpke::SenderContext::new(&params, pk_r.as_bytes(), b"")
             .expect("HPKE setup sender failed");
 
-        let result = decaps(&sk_r, &enc).expect("Decaps wrapper failed");
+        let result = sk_r
+            .with_secret(|raw_key| {
+                let sk_ref =
+                    PrivateKeyRef::X25519(X25519PrivateKeyRef(raw_key.try_into().unwrap()));
+                decaps(&sk_ref, &enc)
+            })
+            .expect("Decaps wrapper failed");
+
         assert_eq!(result.as_slice().len(), 32);
     }
 
@@ -237,7 +232,10 @@ mod tests {
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
 
-        let result = hpke_open(&sk_r, &enc, &[], &[], &algo);
+        let result = sk_r.with_secret(|raw_key| {
+            let sk_ref = PrivateKeyRef::X25519(X25519PrivateKeyRef(raw_key.try_into().unwrap()));
+            hpke_open(&sk_ref, &enc, &[], &[], &algo)
+        });
         assert!(matches!(result, Err(Status::UnsupportedAlgorithm)));
     }
 
@@ -266,8 +264,13 @@ mod tests {
             .expect("HPKE setup sender failed");
         let ciphertext = sender_ctx.seal(pt, aad);
 
-        let decrypted =
-            hpke_open(&sk_r, &enc, &ciphertext, aad, &hpke_algo).expect("Decryption failed");
+        let decrypted = sk_r
+            .with_secret(|raw_key| {
+                let sk_ref =
+                    PrivateKeyRef::X25519(X25519PrivateKeyRef(raw_key.try_into().unwrap()));
+                hpke_open(&sk_ref, &enc, &ciphertext, aad, &hpke_algo)
+            })
+            .expect("Decryption failed");
 
         assert_eq!(decrypted.as_slice(), pt);
     }
@@ -302,7 +305,10 @@ mod tests {
             *byte ^= 1;
         }
 
-        let result = hpke_open(&sk_r, &enc, &ciphertext, aad, &hpke_algo);
+        let result = sk_r.with_secret(|raw_key| {
+            let sk_ref = PrivateKeyRef::X25519(X25519PrivateKeyRef(raw_key.try_into().unwrap()));
+            hpke_open(&sk_ref, &enc, &ciphertext, aad, &hpke_algo)
+        });
         assert!(matches!(result, Err(Status::DecryptionFailure)));
     }
 
@@ -334,7 +340,10 @@ mod tests {
         // Tamper with aad
         let tampered_aad = b"bar";
 
-        let result = hpke_open(&sk_r, &enc, &ciphertext, tampered_aad, &hpke_algo);
+        let result = sk_r.with_secret(|raw_key| {
+            let sk_ref = PrivateKeyRef::X25519(X25519PrivateKeyRef(raw_key.try_into().unwrap()));
+            hpke_open(&sk_ref, &enc, &ciphertext, tampered_aad, &hpke_algo)
+        });
         assert!(matches!(result, Err(Status::DecryptionFailure)));
     }
 
@@ -356,8 +365,14 @@ mod tests {
         let (enc, ciphertext) = hpke_seal(&pk_r, &pt, aad, &hpke_algo).expect("HPKE seal failed");
 
         // Decrypt to verify
-        let decrypted =
-            hpke_open(&sk_r, &enc, &ciphertext, aad, &hpke_algo).expect("Decryption failed");
+        let decrypted = sk_r
+            .with_secret(|raw_key| {
+                let sk_ref =
+                    PrivateKeyRef::X25519(X25519PrivateKeyRef(raw_key.try_into().unwrap()));
+                hpke_open(&sk_ref, &enc, &ciphertext, aad, &hpke_algo)
+            })
+            .expect("Decryption failed");
+
         assert_eq!(decrypted.as_slice(), pt.as_slice());
     }
 

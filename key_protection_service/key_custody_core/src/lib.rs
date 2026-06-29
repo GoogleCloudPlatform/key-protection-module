@@ -157,10 +157,10 @@ fn decap_and_seal_internal(
         Err(Status::InternalError)? // Invalid key type
     };
 
-    let priv_key = key_record.get_private_key();
-
     // Decapsulate
-    let shared_secret = km_common::crypto::decaps(&priv_key, encapsulated_key)?;
+    let shared_secret = key_record.with_private_key(|priv_key_ref| {
+        km_common::crypto::decaps(priv_key_ref, encapsulated_key)
+    })?;
 
     // Seal
     let (enc, ct) =
@@ -897,9 +897,23 @@ mod tests {
         assert_eq!(result, Status::Success);
 
         // 4. Verify we can decrypt the result using binding_sk
-        let recovered_shared_secret =
-            km_common::crypto::hpke_open(&binding_sk, &out_enc_key, &out_ct, aad, &algo)
-                .expect("Failed to decrypt the resealed secret");
+        let binding_meta = km_common::key_types::KeyMetadata {
+            id: Uuid::new_v4(),
+            created_at: std::time::Instant::now(),
+            delete_after: std::time::Instant::now() + std::time::Duration::from_secs(3600),
+            spec: km_common::key_types::KeySpec::Binding {
+                algo: algo.clone(),
+                binding_public_key: binding_pk.clone(),
+            },
+        };
+        let binding_record =
+            km_common::key_types::KeyRecord::new_for_testing(binding_meta, binding_sk);
+
+        let recovered_shared_secret = binding_record
+            .with_private_key(|priv_key_ref| {
+                km_common::crypto::hpke_open(priv_key_ref, &out_enc_key, &out_ct, aad, &algo)
+            })
+            .expect("Failed to decrypt the resealed secret");
 
         assert_eq!(recovered_shared_secret.as_slice().len(), 32);
 
