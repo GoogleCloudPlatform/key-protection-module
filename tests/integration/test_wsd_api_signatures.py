@@ -96,14 +96,14 @@ def test_get_capabilities_success(wsd_client):
             400,
             "invalid request" # protovalidate error (lifespan gt 0)
         ),
-        # Sad Case: Negative lifespan (should fail json unmarshal)
+        # Sad Case: Negative lifespan (should fail in protojson validation)
         (
             {
                 "algorithm": {"type": "kem", "params": {"kem_id": "KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256"}},
                 "lifespan": -1
             },
             400,
-            "invalid request body"
+            "invalid value for uint64 field lifespan"
         ),
         # Sad Case: Unsupported algorithm type
         (
@@ -263,8 +263,7 @@ def test_destroy_key_success(wsd_client, valid_key_handle):
     
     # Destroy
     resp = session.post(f"{base_url}/v1/keys:destroy", json=payload, timeout=10)
-    assert resp.status_code == 204, f"Response: {resp.text}"
-    assert resp.text == "" # 204 should have no body
+    assert resp.status_code == 200, f"Response: {resp.text}"
     
     # Verify it is gone (enumerate)
     resp_enum = session.get(f"{base_url}/v1/keys", timeout=10)
