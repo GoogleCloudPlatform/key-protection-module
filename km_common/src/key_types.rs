@@ -147,7 +147,9 @@ impl KeyRecord {
         F: FnOnce(&crypto::PrivateKeyRef) -> T,
     {
         self.private_key.with_secret(|raw_key| {
-            let priv_key_ref = crypto::PrivateKeyRef::X25519(crypto::X25519PrivateKeyRef(raw_key));
+            let raw_key_arr: &[u8; 32] = raw_key.try_into().expect("Invalid key length");
+            let priv_key_ref =
+                crypto::PrivateKeyRef::X25519(crypto::X25519PrivateKeyRef(raw_key_arr));
             f(&priv_key_ref)
         })
     }

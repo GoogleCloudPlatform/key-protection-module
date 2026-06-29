@@ -85,14 +85,9 @@ impl Vault {
         })
     }
 
-    /// Conceptually unsafe wrapper executing a closure with mutable access to the secure region.
+    /// Executes a closure with mutable access to the secure region.
     /// Allows zero-copy initialization.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that any raw pointers or FFI calls writing into the mutable slice
-    /// do not write out of bounds. The slice length is guaranteed to be exactly the initialized size.
-    pub unsafe fn write_secret<F, T>(&mut self, f: F) -> T
+    pub fn write_secret<F, T>(&mut self, f: F) -> T
     where
         F: FnOnce(&mut [u8]) -> T,
     {
@@ -238,11 +233,9 @@ mod tests {
         let mut vault = Vault::new_empty(32).expect("Failed to create empty vault");
         let data = *b"0123456789abcdef0123456789abcdef";
 
-        unsafe {
-            vault.write_secret(|vault_mut_slice| {
-                vault_mut_slice.copy_from_slice(&data);
-            });
-        }
+        vault.write_secret(|vault_mut_slice| {
+            vault_mut_slice.copy_from_slice(&data);
+        });
 
         vault.with_secret(|secret_bytes| {
             assert_eq!(secret_bytes, &data);

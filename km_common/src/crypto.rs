@@ -211,7 +211,8 @@ mod tests {
 
         let result = sk_r
             .with_secret(|raw_key| {
-                let sk_ref = PrivateKeyRef::X25519(X25519PrivateKeyRef(raw_key));
+                let sk_ref =
+                    PrivateKeyRef::X25519(X25519PrivateKeyRef(raw_key.try_into().unwrap()));
                 decaps(&sk_ref, &enc)
             })
             .expect("Decaps wrapper failed");
@@ -232,7 +233,7 @@ mod tests {
         };
 
         let result = sk_r.with_secret(|raw_key| {
-            let sk_ref = PrivateKeyRef::X25519(X25519PrivateKeyRef(raw_key));
+            let sk_ref = PrivateKeyRef::X25519(X25519PrivateKeyRef(raw_key.try_into().unwrap()));
             hpke_open(&sk_ref, &enc, &[], &[], &algo)
         });
         assert!(matches!(result, Err(Status::UnsupportedAlgorithm)));
@@ -265,7 +266,8 @@ mod tests {
 
         let decrypted = sk_r
             .with_secret(|raw_key| {
-                let sk_ref = PrivateKeyRef::X25519(X25519PrivateKeyRef(raw_key));
+                let sk_ref =
+                    PrivateKeyRef::X25519(X25519PrivateKeyRef(raw_key.try_into().unwrap()));
                 hpke_open(&sk_ref, &enc, &ciphertext, aad, &hpke_algo)
             })
             .expect("Decryption failed");
@@ -304,7 +306,7 @@ mod tests {
         }
 
         let result = sk_r.with_secret(|raw_key| {
-            let sk_ref = PrivateKeyRef::X25519(X25519PrivateKeyRef(raw_key));
+            let sk_ref = PrivateKeyRef::X25519(X25519PrivateKeyRef(raw_key.try_into().unwrap()));
             hpke_open(&sk_ref, &enc, &ciphertext, aad, &hpke_algo)
         });
         assert!(matches!(result, Err(Status::DecryptionFailure)));
@@ -339,7 +341,7 @@ mod tests {
         let tampered_aad = b"bar";
 
         let result = sk_r.with_secret(|raw_key| {
-            let sk_ref = PrivateKeyRef::X25519(X25519PrivateKeyRef(raw_key));
+            let sk_ref = PrivateKeyRef::X25519(X25519PrivateKeyRef(raw_key.try_into().unwrap()));
             hpke_open(&sk_ref, &enc, &ciphertext, tampered_aad, &hpke_algo)
         });
         assert!(matches!(result, Err(Status::DecryptionFailure)));
@@ -365,7 +367,8 @@ mod tests {
         // Decrypt to verify
         let decrypted = sk_r
             .with_secret(|raw_key| {
-                let sk_ref = PrivateKeyRef::X25519(X25519PrivateKeyRef(raw_key));
+                let sk_ref =
+                    PrivateKeyRef::X25519(X25519PrivateKeyRef(raw_key.try_into().unwrap()));
                 hpke_open(&sk_ref, &enc, &ciphertext, aad, &hpke_algo)
             })
             .expect("Decryption failed");
