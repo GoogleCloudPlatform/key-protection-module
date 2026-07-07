@@ -51,11 +51,14 @@ func main() {
 
 func runWsd(ctx context.Context, socketPath string, mode keymanager.KeyProtectionMechanism, kpsVMIP string) error {
 	socketDir := filepath.Dir(socketPath)
-	// We use 0755 permissions for the socket directory to allow cross-group access
+	// We use 0777 permissions for the socket directory to allow cross-group access
 	// so that other workloads/containers running under different GIDs can traverse
-	// the directory to connect to the unix socket.
-	if err := os.MkdirAll(socketDir, 0755); err != nil { //nolint:gosec
+	// the directory and connect to the unix socket.
+	if err := os.MkdirAll(socketDir, 0777); err != nil { //nolint:gosec
 		return fmt.Errorf("failed to create directory for socket %s: %w", socketDir, err)
+	}
+	if err := os.Chmod(socketDir, 0777); err != nil {
+		return fmt.Errorf("failed to chmod socket directory %s: %w", socketDir, err)
 	}
 
 	log.Printf("Initializing KeyManager WSD server on unix socket %s", socketPath)

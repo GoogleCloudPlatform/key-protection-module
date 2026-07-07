@@ -48,6 +48,16 @@ func TestRunWSD(t *testing.T) {
 		t.Fatalf("Socket file %s was not created in time", socketPath)
 	}
 
+	// Verify permissions of socket directory!
+	socketDir := filepath.Dir(socketPath)
+	info, err := os.Stat(socketDir)
+	if err != nil {
+		t.Fatalf("failed to stat socket directory %s: %v", socketDir, err)
+	}
+	if perm := info.Mode().Perm(); perm != 0777 {
+		t.Errorf("expected socket directory %s to have permissions 0777, got %04o", socketDir, perm)
+	}
+
 	// Trigger clean shutdown
 	cancel()
 
