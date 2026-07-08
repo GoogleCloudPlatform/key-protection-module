@@ -57,7 +57,7 @@ func runWsd(ctx context.Context, socketPath string, mode keymanager.KeyProtectio
 	if err := os.MkdirAll(socketDir, 0777); err != nil { //nolint:gosec
 		return fmt.Errorf("failed to create directory for socket %s: %w", socketDir, err)
 	}
-	if err := os.Chmod(socketDir, 0777); err != nil {
+	if err := os.Chmod(socketDir, 0777); err != nil { //nolint:gosec
 		return fmt.Errorf("failed to chmod socket directory %s: %w", socketDir, err)
 	}
 
