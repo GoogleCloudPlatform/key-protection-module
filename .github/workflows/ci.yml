@@ -240,6 +240,18 @@ jobs:
         with:
           version: v1.64.8
 
+  image-config:
+    name: Guest Image Config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Validate KPS Fluent Bit config
+        run: ./scripts/validate-fluentbit-config.sh
+
+      - name: Verify systemd units
+        run: ./scripts/validate-systemd-units.sh
+
   lintc:
     name: Lint CGO
     runs-on: ubuntu-latest

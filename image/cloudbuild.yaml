@@ -91,6 +91,8 @@ steps:
         cp ./image/exit_script.sh /workspace/oem-install/kps/exit_script.sh
         cp ./image/kps_runner.sh /workspace/oem-install/kps/kps_runner.sh
         cp ./image/network_setup.sh /workspace/oem-install/kps/network_setup.sh
+        cp ./image/fluent-bit-kps.conf /workspace/oem-install/kps/fluent-bit-kps.conf
+        cp ./image/fluent-bit-kps.service /workspace/oem-install/kps/fluent-bit-kps.service
 
         if [ -f /workspace/kps_image/image.tar ]; then
             cp /workspace/kps_image/image.tar /workspace/oem-install/kps/image.tar

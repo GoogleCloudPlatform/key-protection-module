@@ -20,6 +20,10 @@ main() {
   # Copy service files.
   cp /usr/share/oem/kps/keymanager.service /etc/systemd/system/keymanager.service
   cp /usr/share/oem/kps/attestation.service /etc/systemd/system/attestation.service
+  cp /usr/share/oem/kps/fluent-bit-kps.service /etc/systemd/system/fluent-bit-kps.service
+
+  mkdir -p /etc/fluent-bit
+  cp /usr/share/oem/kps/fluent-bit-kps.conf /etc/fluent-bit/fluent-bit-kps.conf
 
   mkdir /tmp/container_launcher
   chmod +rw /tmp/container_launcher
@@ -38,6 +42,20 @@ main() {
   systemctl enable attestation.service
   systemctl start keymanager.service
   systemctl start attestation.service
+
+  # Last, so a failing relay cannot stop the KPS from serving keys. Nothing is
+  # missed: these units log to journald, and Read_From_Tail=False reads the
+  # journal from the beginning.
+  systemctl enable fluent-bit-kps.service
+  systemctl start fluent-bit-kps.service
+
+  # Type=simple reports a successful start once exec'd, so a config fluent-bit
+  # rejects on load would otherwise go unnoticed.
+  if ! systemctl is-active --quiet fluent-bit-kps.service; then
+    echo "FATAL: fluent-bit-kps.service did not start; KPS telemetry is disabled" > /dev/console
+    systemctl status --no-pager fluent-bit-kps.service > /dev/console 2>&1
+    return 1
+  fi
 }
 
 main
