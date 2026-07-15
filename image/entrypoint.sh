@@ -14,6 +14,11 @@
 # limitations under the License.
 
 main() {
+  # Set IMA policy
+  if [[ -f /usr/share/oem/ima-policy ]]; then
+    cp /usr/share/oem/ima-policy /sys/kernel/security/ima/policy
+  fi
+
   # Configure sysctls.
   sysctl -w kernel.kexec_load_disabled=1
 

@@ -59,8 +59,9 @@ steps:
       - |
         set -e
         docker pull ${_KPS_DOCKER_IMAGE_REF}
-        mkdir -p /workspace/kps_image
-        docker save ${_KPS_DOCKER_IMAGE_REF} -o /workspace/kps_image/image.tar
+        container_id=$$(docker create ${_KPS_DOCKER_IMAGE_REF})
+        docker export "$${container_id}" -o /workspace/kps_rootfs.tar
+        docker rm "$${container_id}"
 
   - name: golang:1.25-rc-bullseye
     id: BuildAttestationService
@@ -92,12 +93,25 @@ steps:
         cp ./image/kps_runner.sh /workspace/oem-install/kps/kps_runner.sh
         cp ./image/network_setup.sh /workspace/oem-install/kps/network_setup.sh
 
-        if [ -f /workspace/kps_image/image.tar ]; then
-            cp /workspace/kps_image/image.tar /workspace/oem-install/kps/image.tar
+        # Extract KPS rootfs
+        if [ -f /workspace/kps_rootfs.tar ]; then
+          mkdir -p /workspace/oem-install/kps/rootfs
+          tar -C /workspace/oem-install/kps/rootfs -xf /workspace/kps_rootfs.tar
+          mkdir -p /workspace/oem-install/kps/rootfs/run/container_launcher
+          # Mountpoint needed by containerd
+          mkdir -p /workspace/oem-install/kps/rootfs/dev/mqueue
         fi
 
+        # Create IMA policy
+        cat << 'EOF' > /workspace/oem-install/ima-policy
+        appraise func=BPRM_CHECK
+        appraise func=FILE_MMAP mask=MAY_EXEC
+        audit func=BPRM_CHECK
+        audit func=FILE_MMAP mask=MAY_EXEC
+        EOF
+
         cat << EOF > /workspace/oem-install/kps/image.env
-        IMAGE_PATH="/usr/share/oem/kps/image.tar"
+        IMAGE_PATH="/usr/share/oem/kps/rootfs"
         IMAGE_REF="${_KPS_DOCKER_IMAGE_REF}"
         CONTAINER_NAME="key-management-agent"
         EOF
@@ -198,10 +212,11 @@ steps:
 
         CMD=(
           "/oem-preloader"
+          "--ima-mode=hash"
           "--vmlinux=./vmlinux"
           "--src-image=./disk.raw"
           "--out-image=output.bin"
-          "--oem-fs-size=500M"
+          "--oem-fs-size=800M"
           "--disk-size-gb=16"
           "--install-dir=/workspace/oem-install/"
         )
