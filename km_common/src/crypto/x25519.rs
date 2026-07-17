@@ -103,6 +103,18 @@ impl PublicKeyOps for X25519PublicKey {
 /// X25519-based private key implementation.
 pub struct X25519PrivateKey(pub(crate) SecretBox);
 
+impl std::fmt::Debug for X25519PrivateKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        crate::fmt_redacted(f)
+    }
+}
+
+impl std::fmt::Display for X25519PrivateKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        crate::fmt_redacted(f)
+    }
+}
+
 impl From<X25519PrivateKey> for SecretBox {
     fn from(key: X25519PrivateKey) -> SecretBox {
         key.0

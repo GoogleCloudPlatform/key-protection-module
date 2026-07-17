@@ -21,11 +21,22 @@ const SYS_MEMFD_SECRET: i64 = 447;
 /// `Vault` uses a secret memory file descriptor that is not visible in the
 /// filesystem and whose memory is unmapped from the kernel page tables.
 /// The memory is automatically zeroed when the `Vault` is dropped.
-#[derive(Debug)]
 pub struct Vault {
     mmap: MmapMut,
     #[cfg(test)]
     file: File,
+}
+
+impl std::fmt::Debug for Vault {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        crate::fmt_redacted(f)
+    }
+}
+
+impl std::fmt::Display for Vault {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        crate::fmt_redacted(f)
+    }
 }
 
 #[cfg(test)]

@@ -8,6 +8,18 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct SecretBox(Box<[u8]>);
 
+impl std::fmt::Debug for SecretBox {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        crate::fmt_redacted(f)
+    }
+}
+
+impl std::fmt::Display for SecretBox {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        crate::fmt_redacted(f)
+    }
+}
+
 impl SecretBox {
     /// Creates a new `SecretBox` from a `Vec<u8>`.
     /// If the `Vec<u8>` has extra capacity, a new, exactly-sized `Box<[u8]>` is allocated,

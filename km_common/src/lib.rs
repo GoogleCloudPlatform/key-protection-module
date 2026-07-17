@@ -6,6 +6,12 @@ pub use proto::Status;
 pub const MAX_ALGORITHM_LEN: usize = 128;
 pub const MAX_PUBLIC_KEY_LEN: usize = 2048;
 
+const REDACTED: &str = "[REDACTED]";
+
+pub(crate) fn fmt_redacted(f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.write_str(REDACTED)
+}
+
 impl std::error::Error for Status {}
 impl std::fmt::Display for Status {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

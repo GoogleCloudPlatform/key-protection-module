@@ -50,6 +50,18 @@ pub struct KeyRecord {
     private_key: Vault,
 }
 
+impl std::fmt::Debug for KeyRecord {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        crate::fmt_redacted(f)
+    }
+}
+
+impl std::fmt::Display for KeyRecord {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        crate::fmt_redacted(f)
+    }
+}
+
 pub type KeyHandle = Uuid;
 
 /// Thread-safe registry for storing encryption keys.

@@ -111,6 +111,18 @@ pub enum PrivateKey {
     X25519(X25519PrivateKey),
 }
 
+impl std::fmt::Debug for PrivateKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        crate::fmt_redacted(f)
+    }
+}
+
+impl std::fmt::Display for PrivateKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        crate::fmt_redacted(f)
+    }
+}
+
 impl From<SecretBox> for PrivateKey {
     fn from(secret: SecretBox) -> Self {
         PrivateKey::X25519(X25519PrivateKey(secret))
