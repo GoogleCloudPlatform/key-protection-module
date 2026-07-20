@@ -52,9 +52,8 @@ main() {
   # Type=simple reports a successful start once exec'd, so a config fluent-bit
   # rejects on load would otherwise go unnoticed.
   if ! systemctl is-active --quiet fluent-bit-kps.service; then
-    echo "FATAL: fluent-bit-kps.service did not start; KPS telemetry is disabled" > /dev/console
+    echo "ERROR: fluent-bit-kps.service did not start; KPS telemetry is disabled" > /dev/console
     systemctl status --no-pager fluent-bit-kps.service > /dev/console 2>&1
-    return 1
   fi
 }
 
