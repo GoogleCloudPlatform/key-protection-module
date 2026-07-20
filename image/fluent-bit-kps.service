@@ -1,0 +1,32 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Relays the KPS journal to the workload VM. The base image's fluent-bit.service
+# is not reused: it gates on /etc/cloud-api-domains and uploads to Cloud Logging,
+# neither of which applies here. It stays inert on its own failed Condition.
+
+[Unit]
+Description=Fluent Bit log relay for Key Protection Service
+After=network.target systemd-networkd.service
+Wants=network.target
+
+[Service]
+Type=simple
+ExecStartPre=/bin/mkdir -p /var/log/google-fluentbit
+ExecStart=/usr/bin/fluent-bit -c /etc/fluent-bit/fluent-bit-kps.conf
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
