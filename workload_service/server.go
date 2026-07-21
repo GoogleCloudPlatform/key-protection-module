@@ -24,6 +24,8 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/GoogleCloudPlatform/key-protection-module/internal/telemetry"
+
 	api "github.com/GoogleCloudPlatform/key-protection-module/workload_service/proto"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -303,15 +305,17 @@ func (r *remoteKeyProtectionService) GetKEMKey(ctx context.Context, id uuid.UUID
 	return resp.GetKemPubKey().GetPublicKey(), resp.GetBindingPubKey().GetPublicKey(), resp.GetBindingPubKey().GetAlgorithm(), resp.GetRemainingLifespanSecs(), nil
 }
 
-// Server is the WSD HTTP server.
+// Server encapsulates the dependencies and state for the WSD HTTP/gRPC server.
 type Server struct {
 	keymanager.UnimplementedKeyClaimsServiceServer
 	keyProtectionService KeyProtectionService
 	workloadService      WorkloadService
-	mu                   sync.RWMutex
 	kemToBindingMap      map[uuid.UUID]uuid.UUID
+	mu                   sync.RWMutex
 	mode                 keymanager.KeyProtectionMechanism
+	telemetryShutdown    func(context.Context) error
 
+	// HTTP Server state
 	httpServer      *http.Server
 	httpListener    net.Listener
 	grpcServer      *grpc.Server
@@ -389,14 +393,30 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 		mechanism:            keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED,
 	}
 
+	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	if endpoint != "" {
+		shutdownFunc, err := telemetry.Init(context.Background(), endpoint, "WorkloadService")
+		if err != nil {
+			log.Printf("failed to initialize telemetry: %v", err)
+		} else {
+			s.telemetryShutdown = shutdownFunc
+		}
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/keys:generate_key", s.handleGenerateKey)
 	mux.HandleFunc("POST /v1/keys:decap", s.handleDecaps)
 	mux.HandleFunc("GET /v1/capabilities", s.handleGetCapabilities)
 	mux.HandleFunc("GET /v1/keys", s.handleEnumerateKeys)
 	mux.HandleFunc("POST /v1/keys:destroy", s.handleDestroy)
+
+	var handler http.Handler = mux
+	if endpoint != "" {
+		handler = telemetry.WrapHTTPHandler(mux, "WorkloadService")
+	}
+
 	s.httpServer = &http.Server{
-		Handler:           mux,
+		Handler:           handler,
 		ReadHeaderTimeout: WsdReadHeaderTimeout,
 	}
 
@@ -444,31 +464,38 @@ func (s *Server) Serve() error {
 // Shutdown gracefully shuts down the server.
 func (s *Server) Shutdown(ctx context.Context) error {
 	var errs []error
+
 	if s.grpcServer != nil {
 		shutdownDone := make(chan struct{})
 		go func() {
 			s.grpcServer.GracefulStop()
 			close(shutdownDone)
 		}()
-
 		select {
 		case <-ctx.Done():
-			s.grpcServer.Stop() // Force stop if context is cancelled
-			errs = append(errs, fmt.Errorf("WSD gRPC shutdown context cancelled: %w", ctx.Err()))
+			s.grpcServer.Stop()
+			errs = append(errs, ctx.Err())
 		case <-shutdownDone:
 		}
 	}
-	if s.heartbeatCancel != nil {
-		s.heartbeatCancel()
-	}
-	if err := s.httpServer.Shutdown(ctx); err != nil {
-		errs = append(errs, err)
+	if s.httpServer != nil {
+		if err := s.httpServer.Shutdown(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("HTTP server shutdown error: %w", err))
+		}
 	}
 	if s.conn != nil {
 		if err := s.conn.Close(); err != nil {
-			errs = append(errs, err)
+			errs = append(errs, fmt.Errorf("gRPC connection close error: %w", err))
 		}
 	}
+
+	// Flush telemetry last, after all in-flight requests have been drained.
+	if s.telemetryShutdown != nil {
+		if err := s.telemetryShutdown(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("telemetry shutdown error: %w", err))
+		}
+	}
+
 	return errors.Join(errs...)
 }
 
