@@ -13,8 +13,7 @@ const REAPER_INTERVAL_SECS: u64 = 60;
 const REAPER_INTERVAL_SECS: u64 = 1;
 
 /// Represents the purpose of the Key and its associated algorithms.
-#[derive(Clone)]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum KeySpec {
     /// Represents the composite key used by the Key Protection Service for the decaps-and-encrypt flow.
     KemWithBindingPub {
@@ -33,8 +32,7 @@ pub enum KeySpec {
 }
 
 /// Internal Rust struct to hold the Key Metadata
-#[derive(Clone)]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct KeyMetadata {
     /// UUID key handle for internal tracking
     pub id: Uuid,

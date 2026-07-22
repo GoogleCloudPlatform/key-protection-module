@@ -11,8 +11,16 @@ where
     T: Debug,
 {
     let debug_str = format!("{value:?}");
-    assert!(debug_str.contains("[REDACTED]"), "Debug output does not contain [REDACTED]: {}", debug_str);
-    assert!(!debug_str.contains("sentinel"), "Debug output leaked 'sentinel': {}", debug_str);
+    assert!(
+        debug_str.contains("[REDACTED]"),
+        "Debug output does not contain [REDACTED]: {}",
+        debug_str
+    );
+    assert!(
+        !debug_str.contains("sentinel"),
+        "Debug output leaked 'sentinel': {}",
+        debug_str
+    );
 }
 
 #[test]
