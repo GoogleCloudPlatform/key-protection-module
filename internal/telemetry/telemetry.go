@@ -3,6 +3,7 @@ package telemetry
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -27,7 +28,18 @@ func (t *traceHandler) Handle(ctx context.Context, r slog.Record) error {
 			slog.String("span_id", spanContext.SpanID().String()),
 		)
 	}
-	return t.Handler.Handle(ctx, r)
+	if err := t.Handler.Handle(ctx, r); err != nil {
+		return fmt.Errorf("trace handler: %w", err)
+	}
+	return nil
+}
+
+func (t *traceHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &traceHandler{Handler: t.Handler.WithAttrs(attrs)}
+}
+
+func (t *traceHandler) WithGroup(name string) slog.Handler {
+	return &traceHandler{Handler: t.Handler.WithGroup(name)}
 }
 
 // Init initializes the OTLP Exporter and configures the default logger.
