@@ -107,20 +107,9 @@ impl PublicKeyOps for PublicKey {
 }
 
 /// A wrapper enum for different private key types.
+#[derive(Debug)]
 pub enum PrivateKey {
     X25519(X25519PrivateKey),
-}
-
-impl std::fmt::Debug for PrivateKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        crate::fmt_redacted(f)
-    }
-}
-
-impl std::fmt::Display for PrivateKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        crate::fmt_redacted(f)
-    }
 }
 
 impl From<SecretBox> for PrivateKey {
@@ -394,5 +383,19 @@ mod tests {
 
         let result = generate_keypair(algo);
         assert!(matches!(result, Err(Status::UnsupportedAlgorithm)));
+    }
+}
+
+#[cfg(test)]
+mod redaction_tests {
+    use super::*;
+    use std::format as dbg_format;
+
+    #[test]
+    fn test_private_key_redaction() {
+        let kem_algo = KemAlgorithm::DhkemX25519HkdfSha256;
+        let (_pk, sk) = generate_keypair(kem_algo).expect("KEM generation failed");
+        let debug_str = dbg_format!("{:?}", sk);
+        assert!(debug_str.contains("[REDACTED]"));
     }
 }

@@ -14,6 +14,7 @@ const REAPER_INTERVAL_SECS: u64 = 1;
 
 /// Represents the purpose of the Key and its associated algorithms.
 #[derive(Clone)]
+#[derive(Debug)]
 pub enum KeySpec {
     /// Represents the composite key used by the Key Protection Service for the decaps-and-encrypt flow.
     KemWithBindingPub {
@@ -33,6 +34,7 @@ pub enum KeySpec {
 
 /// Internal Rust struct to hold the Key Metadata
 #[derive(Clone)]
+#[derive(Debug)]
 pub struct KeyMetadata {
     /// UUID key handle for internal tracking
     pub id: Uuid,
@@ -44,22 +46,11 @@ pub struct KeyMetadata {
 }
 
 /// Internal struct to hold the Key Metadata and the secret key material.
+#[derive(Debug)]
 pub struct KeyRecord {
     pub meta: KeyMetadata,
     /// memfd_secrets backed secret key-material
     private_key: Vault,
-}
-
-impl std::fmt::Debug for KeyRecord {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        crate::fmt_redacted(f)
-    }
-}
-
-impl std::fmt::Display for KeyRecord {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        crate::fmt_redacted(f)
-    }
 }
 
 pub type KeyHandle = Uuid;

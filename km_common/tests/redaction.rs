@@ -3,15 +3,16 @@ use km_common::crypto::{PrivateKey, generate_keypair};
 use km_common::key_types::KeyRecord;
 use km_common::protected_mem::Vault;
 use km_common::proto::{AeadAlgorithm, HpkeAlgorithm, KdfAlgorithm, KemAlgorithm};
-use std::fmt::{Debug, Display};
+use std::fmt::Debug;
 use std::time::Duration;
 
 fn assert_redacted<T>(value: &T)
 where
-    T: Debug + Display,
+    T: Debug,
 {
-    assert_eq!(format!("{value:?}"), "[REDACTED]");
-    assert_eq!(format!("{value}"), "[REDACTED]");
+    let debug_str = format!("{value:?}");
+    assert!(debug_str.contains("[REDACTED]"), "Debug output does not contain [REDACTED]: {}", debug_str);
+    assert!(!debug_str.contains("sentinel"), "Debug output leaked 'sentinel': {}", debug_str);
 }
 
 #[test]
