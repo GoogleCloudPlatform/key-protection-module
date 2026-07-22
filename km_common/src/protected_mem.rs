@@ -29,13 +29,13 @@ pub struct Vault {
 
 impl std::fmt::Debug for Vault {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("[REDACTED]")
+        crate::fmt_redacted(f)
     }
 }
 
 impl std::fmt::Display for Vault {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("[REDACTED]")
+        crate::fmt_redacted(f)
     }
 }
 
