@@ -3,6 +3,7 @@ package telemetry
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 
@@ -11,6 +12,43 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 )
+
+type teeHandler struct {
+	h1, h2 slog.Handler
+}
+
+func (t *teeHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return t.h1.Enabled(ctx, level) || t.h2.Enabled(ctx, level)
+}
+
+func (t *teeHandler) Handle(ctx context.Context, r slog.Record) error {
+	var errs []error
+	if t.h1.Enabled(ctx, r.Level) {
+		if err := t.h1.Handle(ctx, r.Clone()); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if t.h2.Enabled(ctx, r.Level) {
+		if err := t.h2.Handle(ctx, r.Clone()); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func (t *teeHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &teeHandler{
+		h1: t.h1.WithAttrs(attrs),
+		h2: t.h2.WithAttrs(attrs),
+	}
+}
+
+func (t *teeHandler) WithGroup(name string) slog.Handler {
+	return &teeHandler{
+		h1: t.h1.WithGroup(name),
+		h2: t.h2.WithGroup(name),
+	}
+}
 
 // Init initializes the OTLP Exporter and configures the default logger.
 // Returns a shutdown function to flush pending telemetry data.
@@ -25,10 +63,10 @@ func Init(_ context.Context, _ string, serviceName string) (func(context.Context
 		propagation.TraceContext{},
 	))
 
-	// Bind slog to OpenTelemetry
-	// Consider a Tee handler here if you still want stdout logs
-	handler := otelslog.NewHandler(serviceName)
-	slog.SetDefault(slog.New(handler))
+	// Bind slog to OpenTelemetry and combine it with the default stdout JSON logger
+	otelHandler := otelslog.NewHandler(serviceName)
+	stdoutHandler := slog.Default().Handler()
+	slog.SetDefault(slog.New(&teeHandler{h1: stdoutHandler, h2: otelHandler}))
 
 	// Return a shutdown function that calls Shutdown() on your TracerProvider and LoggerProvider
 	return func(_ context.Context) error {

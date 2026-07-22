@@ -5,7 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -35,7 +35,15 @@ func main() {
 	mode := parseEnvEnum("KEY_PROTECTION_MECHANISM", keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED, keymanager.KeyProtectionMechanism_value)
 	role := parseEnvEnum("SERVICE_ROLE", keymanager.ServiceRole_SERVICE_ROLE_WSD, keymanager.ServiceRole_value)
 
-	log.Printf("Starting Key Protection Agent. Mode: %s, Role: %s\n", mode, role)
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	if role == keymanager.ServiceRole_SERVICE_ROLE_KPS {
+		logger = logger.With("service.name", "kps")
+	} else {
+		logger = logger.With("service.name", "wsd")
+	}
+	slog.SetDefault(logger)
+
+	slog.Info("Starting Key Protection Agent", "mode", mode.String(), "role", role.String())
 
 	var err error
 	if mode == keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM && role == keymanager.ServiceRole_SERVICE_ROLE_KPS {
@@ -45,7 +53,8 @@ func main() {
 	}
 
 	if err != nil {
-		log.Fatalf("Server exited with error: %v", err)
+		slog.Error("Server exited with error", "error", err)
+		os.Exit(1)
 	}
 }
 
@@ -61,7 +70,7 @@ func runWsd(ctx context.Context, socketPath string, mode keymanager.KeyProtectio
 		return fmt.Errorf("failed to chmod socket directory %s: %w", socketDir, err)
 	}
 
-	log.Printf("Initializing KeyManager WSD server on unix socket %s", socketPath)
+	slog.Info("Initializing KeyManager WSD server", "socket", socketPath)
 	srv, err := workloadservice.New(ctx, socketPath, mode, kpsVMIP)
 	if err != nil {
 		return fmt.Errorf("failed to create WSD server: %w", err)
@@ -78,7 +87,7 @@ func runWsd(ctx context.Context, socketPath string, mode keymanager.KeyProtectio
 	case err := <-errChan:
 		return err
 	case <-ctx.Done():
-		log.Println("Shutting down WSD server...")
+		slog.Info("Shutting down WSD server...")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := srv.Shutdown(shutdownCtx); err != nil {
@@ -89,7 +98,7 @@ func runWsd(ctx context.Context, socketPath string, mode keymanager.KeyProtectio
 }
 
 func runKps(ctx context.Context, port int, mode keymanager.KeyProtectionMechanism, role keymanager.ServiceRole) error {
-	log.Printf("Initializing Key Protection Service on TCP port %d", port)
+	slog.Info("Initializing Key Protection Service", "port", port)
 	srv, err := keyprotectionservice.NewServer(port, mode, role)
 	if err != nil {
 		return fmt.Errorf("failed to create KPS server: %w", err)
@@ -106,7 +115,7 @@ func runKps(ctx context.Context, port int, mode keymanager.KeyProtectionMechanis
 	case err := <-errChan:
 		return err
 	case <-ctx.Done():
-		log.Println("Shutting down KPS server...")
+		slog.Info("Shutting down KPS server...")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := srv.Shutdown(shutdownCtx); err != nil {
@@ -123,7 +132,8 @@ func parseEnvEnum[T ~int32](key string, defaultValue T, enumMap map[string]int32
 	}
 	v, ok := enumMap[val]
 	if !ok {
-		log.Fatalf("Unrecognized %s: %s", key, val)
+		slog.Error("Unrecognized enum", "key", key, "value", val)
+		os.Exit(1)
 	}
 	return T(v)
 }

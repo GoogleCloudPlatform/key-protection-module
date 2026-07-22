@@ -9,7 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"math"
 	"net"
 	"net/http"
@@ -397,7 +397,7 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 	if endpoint != "" {
 		shutdownFunc, err := telemetry.Init(context.Background(), endpoint, "WorkloadService")
 		if err != nil {
-			log.Printf("failed to initialize telemetry: %v", err)
+			slog.Error("failed to initialize telemetry", "error", err)
 		} else {
 			s.telemetryShutdown = shutdownFunc
 		}
@@ -452,7 +452,7 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 func (s *Server) Serve() error {
 	go func() {
 		if err := s.grpcServer.Serve(s.grpcListener); err != nil {
-			log.Printf("failed to serve WSD grpc server: %v", err)
+			slog.Error("failed to serve WSD grpc server", "error", err)
 		}
 	}()
 	if err := s.httpServer.Serve(s.httpListener); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -747,7 +747,7 @@ func writeJSON(w http.ResponseWriter, v proto.Message, code int) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(code)
 	if _, err := w.Write(b); err != nil {
-		log.Printf("failed to write JSON response: %v", err)
+		slog.Error("failed to write JSON response", "error", err)
 	}
 }
 
@@ -758,11 +758,11 @@ func writeError(w http.ResponseWriter, message string, code int) {
 	w.WriteHeader(code)
 	b, err := json.Marshal(map[string]string{"error": message})
 	if err != nil {
-		log.Printf("failed to marshal error response: %v", err)
+		slog.Error("failed to marshal error response", "error", err)
 		b = []byte(`{"error":"internal error serializing response"}`)
 	}
 	if _, err := w.Write(b); err != nil {
-		log.Printf("failed to write error response: %v", err)
+		slog.Error("failed to write error response", "error", err)
 	}
 }
 
@@ -920,7 +920,7 @@ func (s *Server) GetKeyClaims(ctx context.Context, req *keymanager.GetKeyClaimsR
 func (s *Server) startHeartbeat(ctx context.Context) {
 	kpsIP := os.Getenv("KPS_IP")
 	if kpsIP == "" {
-		log.Println("KPS_IP environment variable not set, skipping heartbeat")
+		slog.Info("KPS_IP environment variable not set, skipping heartbeat")
 		return
 	}
 	kpsAddr := kpsIP
@@ -930,7 +930,7 @@ func (s *Server) startHeartbeat(ctx context.Context) {
 
 	conn, err := grpc.NewClient(kpsAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		log.Printf("Failed to connect to KPS at %s: %v", kpsAddr, err)
+		slog.Error("Failed to connect to KPS", "address", kpsAddr, "error", err)
 		return
 	}
 	defer func() { _ = conn.Close() }()
@@ -973,16 +973,16 @@ func (s *Server) performHeartbeat(ctx context.Context, client kpspb.KeyProtectio
 			}
 			token := resp.GetKpsBootToken()
 			if *cachedToken != "" && *cachedToken != token {
-				log.Println("Token mismatch! Triggering cleanup.")
+				slog.Warn("Token mismatch! Triggering cleanup.")
 				s.cleanupState()
 			} else {
-				log.Println("Heartbeat handshake successful.")
+				slog.Info("Heartbeat handshake successful.")
 			}
 			*cachedToken = token
 			return
 		}
 
-		log.Printf("Heartbeat failed: %v. Backing off %v...", err, backoff)
+		slog.Error("Heartbeat failed", "error", err, "backoff", backoff)
 
 		// Initialize or reset the timer
 		if timer == nil {
@@ -999,7 +999,7 @@ func (s *Server) performHeartbeat(ctx context.Context, client kpspb.KeyProtectio
 			return
 		case <-timer.C:
 			if backoff >= maxBackoff {
-				log.Println("Persistent heartbeat failure after max backoff. Triggering cleanup.")
+				slog.Error("Persistent heartbeat failure after max backoff. Triggering cleanup.")
 				s.cleanupState()
 				return
 			}
@@ -1016,10 +1016,10 @@ func (s *Server) performHeartbeat(ctx context.Context, client kpspb.KeyProtectio
 func (s *Server) cleanupState() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	log.Println("Purging kemToBindingMap and Binding keys due to heartbeat failure/token mismatch.")
+	slog.Warn("Purging kemToBindingMap and Binding keys due to heartbeat failure/token mismatch.")
 
 	if err := s.workloadService.DestroyAllKeys(); err != nil {
-		log.Printf("Failed to destroy all binding keys: %v", err)
+		slog.Error("Failed to destroy all binding keys", "error", err)
 	}
 	s.kemToBindingMap = make(map[uuid.UUID]uuid.UUID)
 }
