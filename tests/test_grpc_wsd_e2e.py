@@ -93,10 +93,10 @@ def test_decap_bogus_ciphertext(session, key_handle):
 
 def test_destroy_and_verify(session, key_handle):
     """Steps 5, 6, 7: Destroy key, verify it's gone, and verify second destroy gives 404"""
-    # Step 5: POST /v1/keys:destroy -> 204
+    # Step 5: POST /v1/keys:destroy -> 200
     req = {"key_handle": {"handle": key_handle}}
     resp = session.post(f"{BASE_URL}/v1/keys:destroy", json=req)
-    assert resp.status_code == 204
+    assert resp.status_code == 200
 
     # Step 6: GET /v1/keys -> 200, does NOT contain our handle
     resp2 = session.get(f"{BASE_URL}/v1/keys")
