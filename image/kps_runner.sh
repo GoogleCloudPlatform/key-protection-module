@@ -32,6 +32,7 @@ fi
 
 ctr run --rm --net-host \
   --mount "type=bind,src=/tmp/container_launcher/,dst=/run/container_launcher/,options=rbind:rw" \
+  --mount "type=bind,src=/run/systemd/journal/socket,dst=/run/systemd/journal/socket,options=rbind:rw" \
   --env SERVICE_ROLE="SERVICE_ROLE_KPS" \
   --env KEY_PROTECTION_MECHANISM="KEY_PROTECTION_VM" \
   --rootfs /usr/share/oem/kps/rootfs \
