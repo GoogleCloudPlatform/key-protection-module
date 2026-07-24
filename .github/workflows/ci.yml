@@ -73,18 +73,25 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && matrix.arch == 'amd64'
         run: cargo install --locked --version 0.72.1 bindgen-cli
 
-      - name: Install protoc plugins
-        if: matrix.os == 'ubuntu-latest' && matrix.arch == 'amd64'
-        run: |
-          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
-          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
-          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
-
       - name: Check Protobuf Generation
         if: matrix.os == 'ubuntu-latest' && matrix.arch == 'amd64'
         run: |
           ./gen_keymanager.sh
-          git diff -G'^[^/]' --exit-code km_common/proto/ workload_service/proto/
+          git diff --exit-code -- \
+            km_common/proto/ \
+            workload_service/proto/ \
+            key_protection_service/proto/ \
+            keymanager/attestation_service/proto/gen/
+
+          untracked_generated="$(git ls-files --others --exclude-standard -- \
+            ':(glob)km_common/proto/*.pb.go' \
+            ':(glob)workload_service/proto/*.pb.go' \
+            ':(glob)key_protection_service/proto/*.pb.go' \
+            ':(glob)keymanager/attestation_service/proto/gen/*.pb.go')"
+          if [[ -n "$untracked_generated" ]]; then
+            printf 'Untracked generated protobuf files:\n%s\n' "$untracked_generated"
+            exit 1
+          fi
 
       - name: Check FFI Header Generation
         if: matrix.os == 'ubuntu-latest' && matrix.arch == 'amd64'

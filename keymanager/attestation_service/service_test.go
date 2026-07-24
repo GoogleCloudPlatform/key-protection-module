@@ -87,7 +87,7 @@ func TestGetKeyEndorsement_GRPC(t *testing.T) {
 			name: "Success_WithAcpiData",
 			req: &pb.GetKeyEndorsementRequest{
 				Challenge:       []byte("test-challenge"),
-				KeyHandle:       &keymanager.KeyHandle{Handle: "test-handle"},
+				KeyHandle:       &keymanager.KeyHandle{Handle: "123e4567-e89b-12d3-a456-426614174000"},
 				RequestAcpiData: true,
 			},
 			agentFn: func(_ context.Context, challenge []byte, _ []byte, opts agent.AttestAgentOpts) (*attestationpb.VmAttestation, error) {
@@ -107,7 +107,7 @@ func TestGetKeyEndorsement_GRPC(t *testing.T) {
 			name: "Success_WithoutAcpiData",
 			req: &pb.GetKeyEndorsementRequest{
 				Challenge:       []byte("test-challenge"),
-				KeyHandle:       &keymanager.KeyHandle{Handle: "test-handle"},
+				KeyHandle:       &keymanager.KeyHandle{Handle: "123e4567-e89b-12d3-a456-426614174000"},
 				RequestAcpiData: false,
 			},
 			agentFn: func(_ context.Context, challenge []byte, _ []byte, opts agent.AttestAgentOpts) (*attestationpb.VmAttestation, error) {
@@ -126,7 +126,7 @@ func TestGetKeyEndorsement_GRPC(t *testing.T) {
 		{
 			name: "MissingChallenge",
 			req: &pb.GetKeyEndorsementRequest{
-				KeyHandle: &keymanager.KeyHandle{Handle: "test-handle"},
+				KeyHandle: &keymanager.KeyHandle{Handle: "123e4567-e89b-12d3-a456-426614174000"},
 			},
 			wantCode: codes.InvalidArgument,
 		},
@@ -149,7 +149,7 @@ func TestGetKeyEndorsement_GRPC(t *testing.T) {
 			name: "AgentError",
 			req: &pb.GetKeyEndorsementRequest{
 				Challenge: []byte("test-challenge"),
-				KeyHandle: &keymanager.KeyHandle{Handle: "test-handle"},
+				KeyHandle: &keymanager.KeyHandle{Handle: "123e4567-e89b-12d3-a456-426614174000"},
 			},
 			agentFn: func(_ context.Context, challenge []byte, _ []byte, _ agent.AttestAgentOpts) (*attestationpb.VmAttestation, error) {
 				return nil, fmt.Errorf("agent error")
@@ -161,7 +161,7 @@ func TestGetKeyEndorsement_GRPC(t *testing.T) {
 			name: "KPSError",
 			req: &pb.GetKeyEndorsementRequest{
 				Challenge: []byte("test-challenge"),
-				KeyHandle: &keymanager.KeyHandle{Handle: "test-handle"},
+				KeyHandle: &keymanager.KeyHandle{Handle: "123e4567-e89b-12d3-a456-426614174000"},
 			},
 			kpsFn: func(ctx context.Context, in *keymanager.GetKeyClaimsRequest, opts ...grpc.CallOption) (*keymanager.KeyClaims, error) {
 				return nil, fmt.Errorf("kps error")
@@ -172,7 +172,7 @@ func TestGetKeyEndorsement_GRPC(t *testing.T) {
 			name: "KPSTimeout",
 			req: &pb.GetKeyEndorsementRequest{
 				Challenge: []byte("test-challenge"),
-				KeyHandle: &keymanager.KeyHandle{Handle: "test-handle"},
+				KeyHandle: &keymanager.KeyHandle{Handle: "123e4567-e89b-12d3-a456-426614174000"},
 			},
 			timeoutOverride: 50 * time.Millisecond,
 			kpsFn: func(ctx context.Context, in *keymanager.GetKeyClaimsRequest, opts ...grpc.CallOption) (*keymanager.KeyClaims, error) {
