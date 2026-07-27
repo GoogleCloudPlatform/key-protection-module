@@ -9,7 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"math"
 	"net"
 	"net/http"
@@ -303,15 +303,16 @@ func (r *remoteKeyProtectionService) GetKEMKey(ctx context.Context, id uuid.UUID
 	return resp.GetKemPubKey().GetPublicKey(), resp.GetBindingPubKey().GetPublicKey(), resp.GetBindingPubKey().GetAlgorithm(), resp.GetRemainingLifespanSecs(), nil
 }
 
-// Server is the WSD HTTP server.
+// Server encapsulates the dependencies and state for the WSD HTTP/gRPC server.
 type Server struct {
 	keymanager.UnimplementedKeyClaimsServiceServer
 	keyProtectionService KeyProtectionService
 	workloadService      WorkloadService
-	mu                   sync.RWMutex
 	kemToBindingMap      map[uuid.UUID]uuid.UUID
+	mu                   sync.RWMutex
 	mode                 keymanager.KeyProtectionMechanism
 
+	// HTTP Server state
 	httpServer      *http.Server
 	httpListener    net.Listener
 	grpcServer      *grpc.Server
@@ -395,6 +396,7 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 	mux.HandleFunc("GET /v1/capabilities", s.handleGetCapabilities)
 	mux.HandleFunc("GET /v1/keys", s.handleEnumerateKeys)
 	mux.HandleFunc("POST /v1/keys:destroy", s.handleDestroy)
+
 	s.httpServer = &http.Server{
 		Handler:           mux,
 		ReadHeaderTimeout: WsdReadHeaderTimeout,
@@ -432,7 +434,7 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 func (s *Server) Serve() error {
 	go func() {
 		if err := s.grpcServer.Serve(s.grpcListener); err != nil {
-			log.Printf("failed to serve WSD grpc server: %v", err)
+			slog.Error("failed to serve WSD grpc server", "error", err)
 		}
 	}()
 	if err := s.httpServer.Serve(s.httpListener); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -444,31 +446,31 @@ func (s *Server) Serve() error {
 // Shutdown gracefully shuts down the server.
 func (s *Server) Shutdown(ctx context.Context) error {
 	var errs []error
+
 	if s.grpcServer != nil {
 		shutdownDone := make(chan struct{})
 		go func() {
 			s.grpcServer.GracefulStop()
 			close(shutdownDone)
 		}()
-
 		select {
 		case <-ctx.Done():
-			s.grpcServer.Stop() // Force stop if context is cancelled
-			errs = append(errs, fmt.Errorf("WSD gRPC shutdown context cancelled: %w", ctx.Err()))
+			s.grpcServer.Stop()
+			errs = append(errs, ctx.Err())
 		case <-shutdownDone:
 		}
 	}
-	if s.heartbeatCancel != nil {
-		s.heartbeatCancel()
-	}
-	if err := s.httpServer.Shutdown(ctx); err != nil {
-		errs = append(errs, err)
+	if s.httpServer != nil {
+		if err := s.httpServer.Shutdown(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("HTTP server shutdown error: %w", err))
+		}
 	}
 	if s.conn != nil {
 		if err := s.conn.Close(); err != nil {
-			errs = append(errs, err)
+			errs = append(errs, fmt.Errorf("gRPC connection close error: %w", err))
 		}
 	}
+
 	return errors.Join(errs...)
 }
 
@@ -720,7 +722,7 @@ func writeJSON(w http.ResponseWriter, v proto.Message, code int) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(code)
 	if _, err := w.Write(b); err != nil {
-		log.Printf("failed to write JSON response: %v", err)
+		slog.Error("failed to write JSON response", "error", err)
 	}
 }
 
@@ -731,11 +733,11 @@ func writeError(w http.ResponseWriter, message string, code int) {
 	w.WriteHeader(code)
 	b, err := json.Marshal(map[string]string{"error": message})
 	if err != nil {
-		log.Printf("failed to marshal error response: %v", err)
+		slog.Error("failed to marshal error response", "error", err)
 		b = []byte(`{"error":"internal error serializing response"}`)
 	}
 	if _, err := w.Write(b); err != nil {
-		log.Printf("failed to write error response: %v", err)
+		slog.Error("failed to write error response", "error", err)
 	}
 }
 
@@ -893,7 +895,7 @@ func (s *Server) GetKeyClaims(ctx context.Context, req *keymanager.GetKeyClaimsR
 func (s *Server) startHeartbeat(ctx context.Context) {
 	kpsIP := os.Getenv("KPS_IP")
 	if kpsIP == "" {
-		log.Println("KPS_IP environment variable not set, skipping heartbeat")
+		slog.Info("KPS_IP environment variable not set, skipping heartbeat")
 		return
 	}
 	kpsAddr := kpsIP
@@ -903,7 +905,7 @@ func (s *Server) startHeartbeat(ctx context.Context) {
 
 	conn, err := grpc.NewClient(kpsAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		log.Printf("Failed to connect to KPS at %s: %v", kpsAddr, err)
+		slog.Error("Failed to connect to KPS", "address", kpsAddr, "error", err)
 		return
 	}
 	defer func() { _ = conn.Close() }()
@@ -946,16 +948,16 @@ func (s *Server) performHeartbeat(ctx context.Context, client kpspb.KeyProtectio
 			}
 			token := resp.GetKpsBootToken()
 			if *cachedToken != "" && *cachedToken != token {
-				log.Println("Token mismatch! Triggering cleanup.")
+				slog.Warn("Token mismatch! Triggering cleanup.")
 				s.cleanupState()
 			} else {
-				log.Println("Heartbeat handshake successful.")
+				slog.Info("Heartbeat handshake successful.")
 			}
 			*cachedToken = token
 			return
 		}
 
-		log.Printf("Heartbeat failed: %v. Backing off %v...", err, backoff)
+		slog.Warn("Heartbeat failed, backing off", "error", err, "backoff", backoff)
 
 		// Initialize or reset the timer
 		if timer == nil {
@@ -972,7 +974,7 @@ func (s *Server) performHeartbeat(ctx context.Context, client kpspb.KeyProtectio
 			return
 		case <-timer.C:
 			if backoff >= maxBackoff {
-				log.Println("Persistent heartbeat failure after max backoff. Triggering cleanup.")
+				slog.Error("Persistent heartbeat failure after max backoff. Triggering cleanup.")
 				s.cleanupState()
 				return
 			}
@@ -989,10 +991,10 @@ func (s *Server) performHeartbeat(ctx context.Context, client kpspb.KeyProtectio
 func (s *Server) cleanupState() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	log.Println("Purging kemToBindingMap and Binding keys due to heartbeat failure/token mismatch.")
+	slog.Info("Purging kemToBindingMap and Binding keys due to heartbeat failure/token mismatch.")
 
 	if err := s.workloadService.DestroyAllKeys(); err != nil {
-		log.Printf("Failed to destroy all binding keys: %v", err)
+		slog.Error("Failed to destroy all binding keys", "error", err)
 	}
 	s.kemToBindingMap = make(map[uuid.UUID]uuid.UUID)
 }
