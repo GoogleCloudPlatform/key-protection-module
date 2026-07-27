@@ -112,8 +112,12 @@ pub(crate) fn report_failure(failure: Failure) {
     );
 }
 
+/// Initiates telemetry components inside km_common.
+///
+/// # Safety
+/// `service_name_ptr` must point to a valid UTF-8 string buffer of length `service_name_len`.
 #[unsafe(no_mangle)]
-pub extern "C" fn key_manager_init_telemetry(
+pub unsafe extern "C" fn key_manager_init_telemetry(
     service_name_ptr: *const u8,
     service_name_len: usize,
 ) {
@@ -152,18 +156,19 @@ mod tests {
     fn test_report_failure_emits_configured_service_name_json() {
         if std::env::var_os(CHILD_ENV).is_some() {
             let svc = b"my_custom_ws_service";
-            key_manager_init_telemetry(svc.as_ptr(), svc.len());
+            unsafe { key_manager_init_telemetry(svc.as_ptr(), svc.len()) };
             report_failure(sample_failure());
             return;
         }
 
-        let output = Command::new(std::env::current_exe().expect("test executable should be known"))
-            .arg("--exact")
-            .arg("telemetry::tests::test_report_failure_emits_configured_service_name_json")
-            .arg("--nocapture")
-            .env(CHILD_ENV, "1")
-            .output()
-            .expect("child test process should run");
+        let output =
+            Command::new(std::env::current_exe().expect("test executable should be known"))
+                .arg("--exact")
+                .arg("telemetry::tests::test_report_failure_emits_configured_service_name_json")
+                .arg("--nocapture")
+                .env(CHILD_ENV, "1")
+                .output()
+                .expect("child test process should run");
 
         assert!(
             output.status.success(),
@@ -199,17 +204,18 @@ mod tests {
         const CHILD_ENV_PANIC: &str = "KM_COMMON_PANIC_TEST_CHILD";
         if std::env::var_os(CHILD_ENV_PANIC).is_some() {
             let svc = b"test_panic_service";
-            key_manager_init_telemetry(svc.as_ptr(), svc.len());
+            unsafe { key_manager_init_telemetry(svc.as_ptr(), svc.len()) };
             panic!("super_secret_panic_payload_12345");
         }
 
-        let output = Command::new(std::env::current_exe().expect("test executable should be known"))
-            .arg("--exact")
-            .arg("telemetry::tests::test_panic_after_init_emits_sanitized_fatal_panic_occurred")
-            .arg("--nocapture")
-            .env(CHILD_ENV_PANIC, "1")
-            .output()
-            .expect("child test process should run");
+        let output =
+            Command::new(std::env::current_exe().expect("test executable should be known"))
+                .arg("--exact")
+                .arg("telemetry::tests::test_panic_after_init_emits_sanitized_fatal_panic_occurred")
+                .arg("--nocapture")
+                .env(CHILD_ENV_PANIC, "1")
+                .output()
+                .expect("child test process should run");
 
         assert!(
             !output.status.success(),
