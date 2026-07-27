@@ -1,6 +1,7 @@
 package telemetry
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"testing"
@@ -38,7 +39,7 @@ func TestInitLogger(t *testing.T) {
 
 	InitLogger("test_service")
 	logger := slog.Default()
-	if !logger.Enabled(nil, slog.LevelDebug) {
+	if !logger.Enabled(context.Background(), slog.LevelDebug) {
 		t.Errorf("expected default logger to be enabled for LevelDebug")
 	}
 }
