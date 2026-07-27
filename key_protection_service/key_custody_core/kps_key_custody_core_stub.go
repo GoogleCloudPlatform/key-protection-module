@@ -36,4 +36,5 @@ func DestroyKEMKey(_ uuid.UUID) error {
 }
 
 // InitTelemetry is a no-op stub for architectures where the Rust library is not supported.
+// InitTelemetry is a no-op stub for environments lacking CGO support.
 func InitTelemetry(_ string) {}
