@@ -10,6 +10,7 @@ package wskcc
 #cgo LDFLAGS: -L${SRCDIR}/../../target/release -L${SRCDIR}/../../target/debug -lws_key_custody_core
 #cgo LDFLAGS: -lcrypto -lssl
 #cgo LDFLAGS: -lpthread -ldl -lm -lstdc++
+#include <stdlib.h>
 #include "include/ws_key_custody_core.h"
 */
 import "C"
@@ -152,4 +153,11 @@ func GetBindingKey(id uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
 	}
 
 	return pubkey, algo, nil
+}
+
+// InitTelemetry initializes the Rust key custody core telemetry and panic hook via FFI.
+func InitTelemetry(serviceName string) {
+	cStr := C.CString(serviceName)
+	defer C.free(unsafe.Pointer(cStr))
+	C.key_manager_init_telemetry((*C.uint8_t)(unsafe.Pointer(cStr)), C.size_t(len(serviceName)))
 }

@@ -107,7 +107,7 @@ func TestRunKPS(t *testing.T) {
 		ctx, cancel = context.WithCancel(context.Background())
 
 		// Pick an available port by asking for a wildcard port, matching runKps's behavior
-		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		ln, err := net.Listen("tcp", ":0")
 		if err != nil {
 			t.Fatalf("Failed to pick an available port: %v", err)
 		}

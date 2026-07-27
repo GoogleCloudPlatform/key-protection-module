@@ -34,3 +34,6 @@ func GetBindingKey(id uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
 func DestroyAllKeys() error {
 	return fmt.Errorf("DestroyAllKeys is not supported on this architecture")
 }
+
+// InitTelemetry is a no-op stub for architectures where the Rust library is not supported.
+func InitTelemetry(_ string) {}

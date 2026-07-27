@@ -3,6 +3,7 @@ pub use keymanager as proto;
 
 pub use proto::Status;
 pub use telemetry::KccOperation;
+pub use telemetry::key_manager_init_telemetry;
 
 pub const MAX_ALGORITHM_LEN: usize = 128;
 pub const MAX_PUBLIC_KEY_LEN: usize = 2048;

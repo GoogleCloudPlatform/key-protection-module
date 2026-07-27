@@ -11,6 +11,7 @@ package kpskcc
 #cgo LDFLAGS: -lcrypto -lssl
 #cgo LDFLAGS: -lpthread -ldl -lm -lstdc++
 #include <stdbool.h>
+#include <stdlib.h>
 #include "include/kps_key_custody_core.h"
 */
 import "C"
@@ -209,4 +210,11 @@ func DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byt
 	sealedCT := make([]byte, outCTLen)
 	copy(sealedCT, outCT[:outCTLen])
 	return sealEnc, sealedCT, nil
+}
+
+// InitTelemetry initializes the Rust key custody core telemetry and panic hook via FFI.
+func InitTelemetry(serviceName string) {
+	cStr := C.CString(serviceName)
+	defer C.free(unsafe.Pointer(cStr))
+	C.key_manager_init_telemetry((*C.uint8_t)(unsafe.Pointer(cStr)), C.size_t(len(serviceName)))
 }

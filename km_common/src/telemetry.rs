@@ -1,14 +1,32 @@
 //! Sanitized telemetry infrastructure for Rust KCC FFI boundaries.
 
 use crate::Status;
-use std::sync::Once;
+use std::sync::{Once, OnceLock};
 use tracing_subscriber::prelude::*;
+
+static SERVICE_NAME: OnceLock<String> = OnceLock::new();
+
+pub(crate) fn get_service_name() -> &'static str {
+    SERVICE_NAME
+        .get()
+        .map(|s| s.as_str())
+        .unwrap_or("key_protection_service")
+}
 
 static PANIC_HOOK: std::sync::Once = std::sync::Once::new();
 
 pub(crate) fn install_sanitized_panic_hook() {
     PANIC_HOOK.call_once(|| {
-        std::panic::set_hook(Box::new(|_| {}));
+        std::panic::set_hook(Box::new(|_panic_info| {
+            ensure_telemetry_initialized();
+            let service_name = get_service_name();
+            tracing::error!(
+                target: "rust_kcc",
+                failure_kind = "panic",
+                service.name = service_name,
+                "fatal_panic_occurred"
+            );
+        }));
     });
 }
 
@@ -82,20 +100,38 @@ fn ensure_telemetry_initialized() {
 
 pub(crate) fn report_failure(failure: Failure) {
     ensure_telemetry_initialized();
+    let service_name = get_service_name();
 
     tracing::error!(
         target: "rust_kcc",
         operation = failure.operation.as_str(),
         status = failure.status.as_str_name(),
         failure_kind = failure.kind.as_str(),
-        service.name = "key_protection_service",
+        service.name = service_name,
         "kcc_operation_failed"
     );
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn key_manager_init_telemetry(
+    service_name_ptr: *const u8,
+    service_name_len: usize,
+) {
+    let name = if service_name_ptr.is_null() || service_name_len == 0 {
+        "key_protection_service"
+    } else {
+        let slice = unsafe { std::slice::from_raw_parts(service_name_ptr, service_name_len) };
+        std::str::from_utf8(slice).unwrap_or("key_protection_service")
+    };
+    let _ = SERVICE_NAME.set(name.to_string());
+    ensure_telemetry_initialized();
+    install_sanitized_panic_hook();
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::Command;
 
     fn sample_failure() -> Failure {
         Failure {
@@ -108,5 +144,101 @@ mod tests {
     #[test]
     fn test_report_failure_does_not_panic() {
         report_failure(sample_failure());
+    }
+
+    const CHILD_ENV: &str = "KM_COMMON_TELEMETRY_TEST_CHILD";
+
+    #[test]
+    fn test_report_failure_emits_configured_service_name_json() {
+        if std::env::var_os(CHILD_ENV).is_some() {
+            let svc = b"my_custom_ws_service";
+            key_manager_init_telemetry(svc.as_ptr(), svc.len());
+            report_failure(sample_failure());
+            return;
+        }
+
+        let output = Command::new(std::env::current_exe().expect("test executable should be known"))
+            .arg("--exact")
+            .arg("telemetry::tests::test_report_failure_emits_configured_service_name_json")
+            .arg("--nocapture")
+            .env(CHILD_ENV, "1")
+            .output()
+            .expect("child test process should run");
+
+        assert!(
+            output.status.success(),
+            "child failed: stdout={:?}, stderr={:?}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let output_text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        assert!(
+            output_text.contains("\"service.name\":\"my_custom_ws_service\"")
+                || output_text.contains("\"service.name\": \"my_custom_ws_service\""),
+            "Expected configured service name in output: {output_text}"
+        );
+        assert!(
+            output_text.contains("\"operation\":\"open\"")
+                || output_text.contains("\"operation\": \"open\""),
+            "Expected operation name in output: {output_text}"
+        );
+        assert!(
+            output_text.contains("\"kcc_operation_failed\""),
+            "Expected failure message in output: {output_text}"
+        );
+    }
+
+    #[test]
+    fn test_panic_after_init_emits_sanitized_fatal_panic_occurred() {
+        const CHILD_ENV_PANIC: &str = "KM_COMMON_PANIC_TEST_CHILD";
+        if std::env::var_os(CHILD_ENV_PANIC).is_some() {
+            let svc = b"test_panic_service";
+            key_manager_init_telemetry(svc.as_ptr(), svc.len());
+            panic!("super_secret_panic_payload_12345");
+        }
+
+        let output = Command::new(std::env::current_exe().expect("test executable should be known"))
+            .arg("--exact")
+            .arg("telemetry::tests::test_panic_after_init_emits_sanitized_fatal_panic_occurred")
+            .arg("--nocapture")
+            .env(CHILD_ENV_PANIC, "1")
+            .output()
+            .expect("child test process should run");
+
+        assert!(
+            !output.status.success(),
+            "child should have panicked and failed"
+        );
+
+        let output_text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        assert!(
+            output_text.contains("\"service.name\":\"test_panic_service\"")
+                || output_text.contains("\"service.name\": \"test_panic_service\""),
+            "Expected configured service name in panic output: {output_text}"
+        );
+        assert!(
+            output_text.contains("\"failure_kind\":\"panic\"")
+                || output_text.contains("\"failure_kind\": \"panic\""),
+            "Expected failure_kind=panic in output: {output_text}"
+        );
+        assert!(
+            output_text.contains("\"fatal_panic_occurred\""),
+            "Expected fatal_panic_occurred message in output: {output_text}"
+        );
+        assert!(
+            !output_text.contains("super_secret_panic_payload_12345"),
+            "Panic payload must not leak into logs: {output_text}"
+        );
     }
 }

@@ -34,3 +34,6 @@ func DecapAndSeal(_ uuid.UUID, _, _ []byte) ([]byte, []byte, error) {
 func DestroyKEMKey(_ uuid.UUID) error {
 	return fmt.Errorf("DestroyKEMKey is not supported on this architecture")
 }
+
+// InitTelemetry is a no-op stub for architectures where the Rust library is not supported.
+func InitTelemetry(_ string) {}
