@@ -37,6 +37,11 @@ func TestRunWSD(t *testing.T) {
 	// Wait for the socket file to be created to ensure the server has started
 	started := false
 	for range pollAttempts {
+		select {
+		case err := <-errChan:
+			t.Fatalf("runWsd failed to start: %v", err)
+		default:
+		}
 		if _, err := os.Stat(socketPath); err == nil {
 			started = true
 			break
@@ -92,36 +97,59 @@ func TestRunWSD_InvalidSocketPath(t *testing.T) {
 }
 
 func TestRunKPS(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	var errChan chan error
+	var started bool
+	var port int
+	var ctx context.Context
+	var cancel context.CancelFunc
 
-	// Pick an available port
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("Failed to pick an available port: %v", err)
-	}
-	port := ln.Addr().(*net.TCPAddr).Port
-	_ = ln.Close()
+	for retry := 0; retry < 5; retry++ {
+		ctx, cancel = context.WithCancel(context.Background())
 
-	errChan := make(chan error, 1)
-	go func() {
-		errChan <- runKps(ctx, port, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM, keymanager.ServiceRole_SERVICE_ROLE_KPS)
-	}()
+		// Pick an available port by asking for a wildcard port, matching runKps's behavior
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("Failed to pick an available port: %v", err)
+		}
+		port = ln.Addr().(*net.TCPAddr).Port
+		_ = ln.Close()
 
-	// Wait for the server to start by polling the port
-	addr := fmt.Sprintf("127.0.0.1:%d", port)
-	started := false
-	for range pollAttempts {
-		conn, err := net.Dial("tcp", addr)
-		if err == nil {
-			_ = conn.Close()
-			started = true
+		errChan = make(chan error, 1)
+		go func() {
+			errChan <- runKps(ctx, port, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM, keymanager.ServiceRole_SERVICE_ROLE_KPS)
+		}()
+
+		// Wait for the server to start by polling the port
+		addr := fmt.Sprintf(":%d", port)
+		failedEarly := false
+		for poll := 0; poll < pollAttempts; poll++ {
+			select {
+			case e := <-errChan:
+				t.Logf("runKps failed early on port %d: %v", port, e)
+				failedEarly = true // e.g. bind address already in use because of TIME_WAIT race
+			default:
+			}
+			if failedEarly {
+				break // break polling loop to trigger the outer retry block
+			}
+			conn, err := net.Dial("tcp", addr)
+			if err == nil {
+				_ = conn.Close()
+				started = true
+				break
+			}
+			time.Sleep(pollInterval)
+		}
+
+		if started {
 			break
 		}
-		time.Sleep(pollInterval)
+		// If it failed to start (e.g. port race condition), cleanup and try the next port entirely
+		cancel()
 	}
 
 	if !started {
-		t.Fatalf("KPS server did not start on port %d in time", port)
+		t.Fatalf("KPS server did not start on port %d in time after multiple retries", port)
 	}
 
 	// Trigger clean shutdown
