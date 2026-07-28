@@ -17,9 +17,12 @@ package kpskcc
 import "C"
 
 import (
+	"context"
 	"fmt"
+	"runtime"
 	"unsafe"
 
+	"github.com/GoogleCloudPlatform/key-protection-module/internal/telemetry"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 
@@ -33,10 +36,26 @@ const (
 	sealedCTSize  = 48 // 32-byte secret + 16-byte GCM tag
 )
 
+func withThreadCorrelationID(ctx context.Context, call func()) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	// Clear first so a request without an ID can never inherit stale native thread state.
+	C.key_manager_clear_thread_correlation_id()
+	if id := telemetry.CorrelationID(ctx); id != "" {
+		idPtr := (*C.uint8_t)(unsafe.Pointer(unsafe.StringData(id)))
+		if status := C.key_manager_set_thread_correlation_id(idPtr, C.size_t(len(id))); keymanager.Status(status) != keymanager.Status_STATUS_SUCCESS {
+			C.key_manager_clear_thread_correlation_id()
+		}
+	}
+	defer C.key_manager_clear_thread_correlation_id()
+	call()
+}
+
 // GenerateKEMKeypair generates an X25519 HPKE KEM keypair linked to the
 // provided binding public key via Rust FFI.
 // Returns the UUID key handle and the KEM public key bytes.
-func GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+func GenerateKEMKeypair(ctx context.Context, algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	if len(bindingPubKey) == 0 {
 		return uuid.Nil, nil, fmt.Errorf("binding public key must not be empty")
 	}
@@ -50,16 +69,20 @@ func GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, li
 		return uuid.Nil, nil, fmt.Errorf("failed to marshal HpkeAlgorithm: %v", err)
 	}
 
-	if rc := C.key_manager_generate_kem_keypair(
-		(*C.uint8_t)(unsafe.Pointer(&algoBytes[0])),
-		C.size_t(len(algoBytes)),
-		(*C.uint8_t)(unsafe.Pointer(&bindingPubKey[0])),
-		C.size_t(len(bindingPubKey)),
-		C.uint64_t(lifespanSecs),
-		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
-		(*C.uint8_t)(unsafe.Pointer(&pubkeyBuf[0])),
-		pubkeyLen,
-	); keymanager.Status(rc) != keymanager.Status_STATUS_SUCCESS {
+	var rc C.Status
+	withThreadCorrelationID(ctx, func() {
+		rc = C.key_manager_generate_kem_keypair(
+			(*C.uint8_t)(unsafe.Pointer(&algoBytes[0])),
+			C.size_t(len(algoBytes)),
+			(*C.uint8_t)(unsafe.Pointer(&bindingPubKey[0])),
+			C.size_t(len(bindingPubKey)),
+			C.uint64_t(lifespanSecs),
+			(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
+			(*C.uint8_t)(unsafe.Pointer(&pubkeyBuf[0])),
+			pubkeyLen,
+		)
+	})
+	if keymanager.Status(rc) != keymanager.Status_STATUS_SUCCESS {
 		return uuid.Nil, nil, keymanager.Status(rc).ToStatus()
 	}
 
@@ -75,7 +98,7 @@ func GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, li
 
 // EnumerateKEMKeys retrieves active KEM key entries from the Rust KCC registry with pagination.
 // Returns a list of keys and a boolean indicating if there are more keys to fetch.
-func EnumerateKEMKeys(limit, offset int32) ([]KEMKeyInfo, bool, error) {
+func EnumerateKEMKeys(ctx context.Context, limit, offset int32) ([]KEMKeyInfo, bool, error) {
 	if limit <= 0 {
 		return nil, false, fmt.Errorf("limit must be positive")
 	}
@@ -86,12 +109,15 @@ func EnumerateKEMKeys(limit, offset int32) ([]KEMKeyInfo, bool, error) {
 	entries := make([]C.KpsKeyInfo, limit)
 	var hasMore C.bool
 
-	rc := C.key_manager_enumerate_kem_keys(
-		&entries[0],
-		C.size_t(limit),
-		C.size_t(offset),
-		&hasMore,
-	)
+	var rc C.int32_t
+	withThreadCorrelationID(ctx, func() {
+		rc = C.key_manager_enumerate_kem_keys(
+			&entries[0],
+			C.size_t(limit),
+			C.size_t(offset),
+			&hasMore,
+		)
+	})
 	if rc < 0 {
 		return nil, false, keymanager.Status(-rc).ToStatus()
 	}
@@ -124,16 +150,19 @@ func EnumerateKEMKeys(limit, offset int32) ([]KEMKeyInfo, bool, error) {
 }
 
 // DestroyKEMKey destroys the KEM key identified by kemUUID via Rust FFI.
-func DestroyKEMKey(kemUUID uuid.UUID) error {
+func DestroyKEMKey(ctx context.Context, kemUUID uuid.UUID) error {
 	uuidBytes := kemUUID[:]
-	rc := C.key_manager_destroy_kem_key(
-		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
-	)
+	var rc C.Status
+	withThreadCorrelationID(ctx, func() {
+		rc = C.key_manager_destroy_kem_key(
+			(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
+		)
+	})
 	return keymanager.Status(rc).ToStatus()
 }
 
 // GetKEMKey retrieves KEM and binding public keys, HpkeAlgorithm and remaining lifespan via Rust FFI.
-func GetKEMKey(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+func GetKEMKey(ctx context.Context, id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
 	var uuidBytes [uuidSize]byte
 	copy(uuidBytes[:], id[:])
 
@@ -143,16 +172,19 @@ func GetKEMKey(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64,
 	var algoBuf [C.MAX_ALGORITHM_LEN]byte
 	algoLenC := C.size_t(len(algoBuf))
 
-	rc := C.key_manager_get_kem_key(
-		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
-		(*C.uint8_t)(unsafe.Pointer(&kemPubkeyBuf[0])),
-		C.size_t(len(kemPubkeyBuf)),
-		(*C.uint8_t)(unsafe.Pointer(&bindingPubkeyBuf[0])),
-		C.size_t(len(bindingPubkeyBuf)),
-		(*C.uint8_t)(unsafe.Pointer(&algoBuf[0])),
-		&algoLenC,
-		&remainingLifespanSecs,
-	)
+	var rc C.Status
+	withThreadCorrelationID(ctx, func() {
+		rc = C.key_manager_get_kem_key(
+			(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
+			(*C.uint8_t)(unsafe.Pointer(&kemPubkeyBuf[0])),
+			C.size_t(len(kemPubkeyBuf)),
+			(*C.uint8_t)(unsafe.Pointer(&bindingPubkeyBuf[0])),
+			C.size_t(len(bindingPubkeyBuf)),
+			(*C.uint8_t)(unsafe.Pointer(&algoBuf[0])),
+			&algoLenC,
+			&remainingLifespanSecs,
+		)
+	})
 	if keymanager.Status(rc) != keymanager.Status_STATUS_SUCCESS {
 		return nil, nil, nil, 0, keymanager.Status(rc).ToStatus()
 	}
@@ -172,7 +204,7 @@ func GetKEMKey(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64,
 // DecapAndSeal decapsulates a shared secret using the stored KEM key and
 // reseals it with the associated binding public key via Rust FFI.
 // Returns the new encapsulated key and sealed ciphertext.
-func DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error) {
+func DecapAndSeal(ctx context.Context, kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error) {
 	if len(encapsulatedKey) == 0 {
 		return nil, nil, fmt.Errorf("encapsulated key must not be empty")
 	}
@@ -191,17 +223,21 @@ func DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byt
 		aadLen = C.size_t(len(aad))
 	}
 
-	if rc := C.key_manager_decap_and_seal(
-		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
-		(*C.uint8_t)(unsafe.Pointer(&encapsulatedKey[0])),
-		C.size_t(len(encapsulatedKey)),
-		aadPtr,
-		aadLen,
-		(*C.uint8_t)(unsafe.Pointer(&outEncKey[0])),
-		outEncKeyLen,
-		(*C.uint8_t)(unsafe.Pointer(&outCT[0])),
-		outCTLen,
-	); keymanager.Status(rc) != keymanager.Status_STATUS_SUCCESS {
+	var rc C.Status
+	withThreadCorrelationID(ctx, func() {
+		rc = C.key_manager_decap_and_seal(
+			(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
+			(*C.uint8_t)(unsafe.Pointer(&encapsulatedKey[0])),
+			C.size_t(len(encapsulatedKey)),
+			aadPtr,
+			aadLen,
+			(*C.uint8_t)(unsafe.Pointer(&outEncKey[0])),
+			outEncKeyLen,
+			(*C.uint8_t)(unsafe.Pointer(&outCT[0])),
+			outCTLen,
+		)
+	})
+	if keymanager.Status(rc) != keymanager.Status_STATUS_SUCCESS {
 		return nil, nil, keymanager.Status(rc).ToStatus()
 	}
 

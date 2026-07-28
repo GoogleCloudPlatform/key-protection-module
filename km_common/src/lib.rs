@@ -2,8 +2,10 @@ pub mod keymanager;
 pub use keymanager as proto;
 
 pub use proto::Status;
-pub use telemetry::KccOperation;
-pub use telemetry::key_manager_init_telemetry;
+pub use telemetry::{
+    KccOperation, key_manager_clear_thread_correlation_id, key_manager_init_telemetry,
+    key_manager_set_thread_correlation_id,
+};
 
 pub const MAX_ALGORITHM_LEN: usize = 128;
 pub const MAX_PUBLIC_KEY_LEN: usize = 2048;

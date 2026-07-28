@@ -90,24 +90,24 @@ type KeyProtectionService interface {
 // defaultKPS implements KeyProtectionService by delegating to the KPS KCC FFI.
 type defaultKPS struct{}
 
-func (d *defaultKPS) GenerateKEMKeypair(_ context.Context, algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
-	return kpskcc.GenerateKEMKeypair(algo, bindingPubKey, lifespanSecs)
+func (d *defaultKPS) GenerateKEMKeypair(ctx context.Context, algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+	return kpskcc.GenerateKEMKeypair(ctx, algo, bindingPubKey, lifespanSecs)
 }
 
-func (d *defaultKPS) DecapAndSeal(_ context.Context, kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error) {
-	return kpskcc.DecapAndSeal(kemUUID, encapsulatedKey, aad)
+func (d *defaultKPS) DecapAndSeal(ctx context.Context, kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error) {
+	return kpskcc.DecapAndSeal(ctx, kemUUID, encapsulatedKey, aad)
 }
 
-func (d *defaultKPS) EnumerateKEMKeys(_ context.Context, limit, offset int32) ([]kpskcc.KEMKeyInfo, bool, error) {
-	return kpskcc.EnumerateKEMKeys(limit, offset)
+func (d *defaultKPS) EnumerateKEMKeys(ctx context.Context, limit, offset int32) ([]kpskcc.KEMKeyInfo, bool, error) {
+	return kpskcc.EnumerateKEMKeys(ctx, limit, offset)
 }
 
-func (d *defaultKPS) DestroyKEMKey(_ context.Context, kemUUID uuid.UUID) error {
-	return kpskcc.DestroyKEMKey(kemUUID)
+func (d *defaultKPS) DestroyKEMKey(ctx context.Context, kemUUID uuid.UUID) error {
+	return kpskcc.DestroyKEMKey(ctx, kemUUID)
 }
 
-func (d *defaultKPS) GetKEMKey(_ context.Context, id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
-	return kpskcc.GetKEMKey(id)
+func (d *defaultKPS) GetKEMKey(ctx context.Context, id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+	return kpskcc.GetKEMKey(ctx, id)
 }
 
 // Service implements KeyProtectionService by delegating to an underlying KeyProtectionService.

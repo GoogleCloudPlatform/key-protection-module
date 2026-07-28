@@ -4,6 +4,7 @@ package kpskcc
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 
@@ -25,7 +26,7 @@ func TestIntegrationGenerateKEMKeypair(t *testing.T) {
 		bindingPK[i] = byte(i + 1)
 	}
 
-	id, pubKey, err := GenerateKEMKeypair(defaultAlgo, bindingPK, 3600)
+	id, pubKey, err := GenerateKEMKeypair(context.Background(), defaultAlgo, bindingPK, 3600)
 	if err != nil {
 		t.Fatalf("GenerateKEMKeypair failed: %v", err)
 	}
@@ -39,7 +40,7 @@ func TestIntegrationGenerateKEMKeypair(t *testing.T) {
 }
 
 func TestIntegrationGenerateKEMKeypairEmptyPK(t *testing.T) {
-	_, _, err := GenerateKEMKeypair(defaultAlgo, []byte{}, 3600)
+	_, _, err := GenerateKEMKeypair(context.Background(), defaultAlgo, []byte{}, 3600)
 	if err == nil {
 		t.Fatal("expected error for empty binding public key")
 	}
@@ -51,11 +52,11 @@ func TestIntegrationGenerateKEMKeypairUniqueness(t *testing.T) {
 		bindingPK[i] = byte(i + 1)
 	}
 
-	id1, _, err := GenerateKEMKeypair(defaultAlgo, bindingPK, 3600)
+	id1, _, err := GenerateKEMKeypair(context.Background(), defaultAlgo, bindingPK, 3600)
 	if err != nil {
 		t.Fatalf("first GenerateKEMKeypair failed: %v", err)
 	}
-	id2, _, err := GenerateKEMKeypair(defaultAlgo, bindingPK, 3600)
+	id2, _, err := GenerateKEMKeypair(context.Background(), defaultAlgo, bindingPK, 3600)
 	if err != nil {
 		t.Fatalf("second GenerateKEMKeypair failed: %v", err)
 	}
@@ -70,12 +71,12 @@ func TestIntegrationGetKEMKey(t *testing.T) {
 		bindingPK[i] = byte(i + 50)
 	}
 
-	id, pubKey, err := GenerateKEMKeypair(defaultAlgo, bindingPK, 3600)
+	id, pubKey, err := GenerateKEMKeypair(context.Background(), defaultAlgo, bindingPK, 3600)
 	if err != nil {
 		t.Fatalf("GenerateKEMKeypair failed: %v", err)
 	}
 
-	retrievedKemPK, retrievedBindingPK, retrievedAlgo, remainingLifespanSecs, err := GetKEMKey(id)
+	retrievedKemPK, retrievedBindingPK, retrievedAlgo, remainingLifespanSecs, err := GetKEMKey(context.Background(), id)
 	if err != nil {
 		t.Fatalf("GetKEMKey failed: %v", err)
 	}
@@ -101,7 +102,7 @@ func TestIntegrationGetKEMKey(t *testing.T) {
 }
 
 func TestIntegrationGetKEMKeyNotFound(t *testing.T) {
-	_, _, _, _, err := GetKEMKey(uuid.New())
+	_, _, _, _, err := GetKEMKey(context.Background(), uuid.New())
 	if err == nil {
 		t.Fatal("expected error for non-existent UUID")
 	}

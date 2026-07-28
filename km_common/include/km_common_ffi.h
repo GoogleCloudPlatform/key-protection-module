@@ -38,6 +38,11 @@ typedef int32_t Status;
 extern "C" {
 #endif // __cplusplus
 
+Status key_manager_set_thread_correlation_id(const uint8_t *correlation_id_ptr,
+                                             size_t correlation_id_len);
+
+void key_manager_clear_thread_correlation_id(void);
+
 void key_manager_init_telemetry(const uint8_t *service_name_ptr, size_t service_name_len);
 
 #ifdef __cplusplus

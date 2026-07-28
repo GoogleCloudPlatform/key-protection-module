@@ -1,8 +1,11 @@
 //! Sanitized telemetry infrastructure for Rust KCC FFI boundaries.
 
 use crate::Status;
+use std::cell::Cell;
 use std::sync::{Once, OnceLock};
 use tracing_subscriber::prelude::*;
+
+const CORRELATION_ID_LENGTH: usize = 32;
 
 static SERVICE_NAME: OnceLock<String> = OnceLock::new();
 
@@ -20,13 +23,83 @@ pub(crate) fn install_sanitized_panic_hook() {
         std::panic::set_hook(Box::new(|_panic_info| {
             ensure_telemetry_initialized();
             let service_name = get_service_name();
-            tracing::error!(
-                target: "rust_kcc",
-                failure_kind = "panic",
-                service.name = service_name,
-                "fatal_panic_occurred"
-            );
+            with_correlation_id(|correlation_id| {
+                tracing::error!(
+                    target: "rust_kcc",
+                    failure_kind = "panic",
+                    service.name = service_name,
+                    correlation_id,
+                    "fatal_panic_occurred"
+                );
+            });
         }));
+    });
+}
+
+std::thread_local! {
+    static THREAD_CORRELATION_ID: Cell<Option<[u8; CORRELATION_ID_LENGTH]>> = const { Cell::new(None) };
+}
+
+fn with_correlation_id<F>(f: F)
+where
+    F: FnOnce(&str),
+{
+    THREAD_CORRELATION_ID.with(|id| {
+        let id = id.get();
+        let id = id
+            .as_ref()
+            .and_then(|bytes| std::str::from_utf8(bytes).ok())
+            .unwrap_or_default();
+        f(id);
+    });
+}
+
+fn is_valid_correlation_id(id: &[u8]) -> bool {
+    id.len() == CORRELATION_ID_LENGTH
+        && id.iter().any(|b| *b != b'0')
+        && id
+            .iter()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(b))
+}
+
+/// Sets the bounded correlation ID used by failure telemetry on the current native thread.
+///
+/// # Safety
+/// `correlation_id_ptr` must point to a readable buffer of `correlation_id_len` bytes.
+/// The value must be 32 lowercase hexadecimal characters.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn key_manager_set_thread_correlation_id(
+    correlation_id_ptr: *const u8,
+    correlation_id_len: usize,
+) -> Status {
+    install_sanitized_panic_hook();
+    match std::panic::catch_unwind(|| {
+        THREAD_CORRELATION_ID.with(|id| id.set(None));
+        if correlation_id_ptr.is_null() || correlation_id_len != CORRELATION_ID_LENGTH {
+            return Status::InvalidArgument;
+        }
+
+        let correlation_id =
+            unsafe { std::slice::from_raw_parts(correlation_id_ptr, correlation_id_len) };
+        if !is_valid_correlation_id(correlation_id) {
+            return Status::InvalidArgument;
+        }
+
+        let mut stored_id = [0; CORRELATION_ID_LENGTH];
+        stored_id.copy_from_slice(correlation_id);
+        THREAD_CORRELATION_ID.with(|id| id.set(Some(stored_id)));
+        Status::Success
+    }) {
+        Ok(status) => status,
+        Err(_) => Status::InternalError,
+    }
+}
+
+/// Clears the failure-correlation state on the current native thread.
+#[unsafe(no_mangle)]
+pub extern "C" fn key_manager_clear_thread_correlation_id() {
+    let _ = std::panic::catch_unwind(|| {
+        THREAD_CORRELATION_ID.with(|id| id.set(None));
     });
 }
 
@@ -102,14 +175,17 @@ pub(crate) fn report_failure(failure: Failure) {
     ensure_telemetry_initialized();
     let service_name = get_service_name();
 
-    tracing::error!(
-        target: "rust_kcc",
-        operation = failure.operation.as_str(),
-        status = failure.status.as_str_name(),
-        failure_kind = failure.kind.as_str(),
-        service.name = service_name,
-        "kcc_operation_failed"
-    );
+    with_correlation_id(|correlation_id| {
+        tracing::error!(
+            target: "rust_kcc",
+            operation = failure.operation.as_str(),
+            status = failure.status.as_str_name(),
+            failure_kind = failure.kind.as_str(),
+            service.name = service_name,
+            correlation_id,
+            "kcc_operation_failed"
+        );
+    });
 }
 
 /// Initiates telemetry components inside km_common.
@@ -150,6 +226,56 @@ mod tests {
         report_failure(sample_failure());
     }
 
+    #[test]
+    fn test_correlation_id_is_bounded_and_cleared() {
+        let valid = b"4bf92f3577b34da6a3ce929d0e0e4736";
+        assert_eq!(
+            unsafe { key_manager_set_thread_correlation_id(valid.as_ptr(), valid.len()) },
+            Status::Success
+        );
+        with_correlation_id(|id| assert_eq!(id, "4bf92f3577b34da6a3ce929d0e0e4736"));
+
+        let oversized = [b'a'; CORRELATION_ID_LENGTH + 1];
+        assert_eq!(
+            unsafe { key_manager_set_thread_correlation_id(oversized.as_ptr(), oversized.len()) },
+            Status::InvalidArgument
+        );
+        with_correlation_id(|id| assert_eq!(id, ""));
+
+        assert_eq!(
+            unsafe { key_manager_set_thread_correlation_id(valid.as_ptr(), valid.len()) },
+            Status::Success
+        );
+        key_manager_clear_thread_correlation_id();
+        with_correlation_id(|id| assert_eq!(id, ""));
+    }
+
+    #[test]
+    fn test_correlation_id_is_isolated_by_native_thread() {
+        let handles: Vec<_> = (1..=4)
+            .map(|value| {
+                std::thread::spawn(move || {
+                    let correlation_id = format!("{value:032x}");
+                    assert_eq!(
+                        unsafe {
+                            key_manager_set_thread_correlation_id(
+                                correlation_id.as_ptr(),
+                                correlation_id.len(),
+                            )
+                        },
+                        Status::Success
+                    );
+                    with_correlation_id(|id| assert_eq!(id, correlation_id.as_str()));
+                    key_manager_clear_thread_correlation_id();
+                })
+            })
+            .collect();
+
+        for handle in handles {
+            handle.join().expect("correlation worker panicked");
+        }
+    }
+
     const CHILD_ENV: &str = "KM_COMMON_TELEMETRY_TEST_CHILD";
 
     #[test]
@@ -157,6 +283,16 @@ mod tests {
         if std::env::var_os(CHILD_ENV).is_some() {
             let svc = b"my_custom_ws_service";
             unsafe { key_manager_init_telemetry(svc.as_ptr(), svc.len()) };
+            let correlation_id = b"4bf92f3577b34da6a3ce929d0e0e4736";
+            assert_eq!(
+                unsafe {
+                    key_manager_set_thread_correlation_id(
+                        correlation_id.as_ptr(),
+                        correlation_id.len(),
+                    )
+                },
+                Status::Success
+            );
             report_failure(sample_failure());
             return;
         }
@@ -197,6 +333,11 @@ mod tests {
             output_text.contains("\"kcc_operation_failed\""),
             "Expected failure message in output: {output_text}"
         );
+        assert!(
+            output_text.contains("\"correlation_id\":\"4bf92f3577b34da6a3ce929d0e0e4736\"")
+                || output_text.contains("\"correlation_id\": \"4bf92f3577b34da6a3ce929d0e0e4736\""),
+            "Expected correlation ID in output: {output_text}"
+        );
     }
 
     #[test]
@@ -205,6 +346,16 @@ mod tests {
         if std::env::var_os(CHILD_ENV_PANIC).is_some() {
             let svc = b"test_panic_service";
             unsafe { key_manager_init_telemetry(svc.as_ptr(), svc.len()) };
+            let correlation_id = b"11112222333344445555666677778888";
+            assert_eq!(
+                unsafe {
+                    key_manager_set_thread_correlation_id(
+                        correlation_id.as_ptr(),
+                        correlation_id.len(),
+                    )
+                },
+                Status::Success
+            );
             panic!("super_secret_panic_payload_12345");
         }
 
@@ -241,6 +392,11 @@ mod tests {
         assert!(
             output_text.contains("\"fatal_panic_occurred\""),
             "Expected fatal_panic_occurred message in output: {output_text}"
+        );
+        assert!(
+            output_text.contains("\"correlation_id\":\"11112222333344445555666677778888\"")
+                || output_text.contains("\"correlation_id\": \"11112222333344445555666677778888\""),
+            "Expected correlation ID in panic output: {output_text}"
         );
         assert!(
             !output_text.contains("super_secret_panic_payload_12345"),

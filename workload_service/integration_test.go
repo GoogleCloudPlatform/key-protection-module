@@ -29,24 +29,24 @@ const expirationToleranceSecs = 5.0
 // realWorkloadService wraps the actual WSD KCC FFI.
 type realWorkloadService struct{}
 
-func (r *realWorkloadService) GenerateBindingKeypair(algo *keymanager.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error) {
-	return wskcc.GenerateBindingKeypair(algo, lifespanSecs)
+func (r *realWorkloadService) GenerateBindingKeypair(ctx context.Context, algo *keymanager.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+	return wskcc.GenerateBindingKeypair(ctx, algo, lifespanSecs)
 }
 
-func (r *realWorkloadService) DestroyBindingKey(bindingUUID uuid.UUID) error {
-	return wskcc.DestroyBindingKey(bindingUUID)
+func (r *realWorkloadService) DestroyBindingKey(ctx context.Context, bindingUUID uuid.UUID) error {
+	return wskcc.DestroyBindingKey(ctx, bindingUUID)
 }
 
-func (r *realWorkloadService) Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error) {
-	return wskcc.Open(bindingUUID, enc, ciphertext, aad)
+func (r *realWorkloadService) Open(ctx context.Context, bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error) {
+	return wskcc.Open(ctx, bindingUUID, enc, ciphertext, aad)
 }
 
-func (r *realWorkloadService) GetBindingKey(id uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
-	return wskcc.GetBindingKey(id)
+func (r *realWorkloadService) GetBindingKey(ctx context.Context, id uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
+	return wskcc.GetBindingKey(ctx, id)
 }
 
-func (r *realWorkloadService) DestroyAllKeys() error {
-	return wskcc.DestroyAllKeys()
+func (r *realWorkloadService) DestroyAllKeys(ctx context.Context) error {
+	return wskcc.DestroyAllKeys(ctx)
 }
 
 func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {

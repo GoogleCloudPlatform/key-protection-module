@@ -7,6 +7,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/GoogleCloudPlatform/key-protection-module/internal/telemetry"
 	kpskcc "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/key_custody_core"
 	kpsapi "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/proto"
 	keymanager "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto"
@@ -93,7 +94,10 @@ func newServerWithKPS(port int, kps KeyProtectionService, mode keymanager.KeyPro
 	}
 
 	grpcServer := grpc.NewServer(
-		grpc.UnaryInterceptor(ValidationInterceptor),
+		grpc.ChainUnaryInterceptor(
+			telemetry.CorrelationUnaryServerInterceptor,
+			ValidationInterceptor,
+		),
 	)
 
 	bootToken := uuid.New().String()

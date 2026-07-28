@@ -21,6 +21,7 @@ import (
 
 	"buf.build/go/protovalidate"
 
+	"github.com/GoogleCloudPlatform/key-protection-module/internal/telemetry"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
@@ -63,7 +64,7 @@ type WorkloadService interface {
 	//   - uuid.UUID: A unique identifier representing the stored binding keypair.
 	//   - []byte: The public binding key bytes to be shared with the Key Protection Service.
 	//   - error: An error if generation or storage fails.
-	GenerateBindingKeypair(algo *keymanager.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error)
+	GenerateBindingKeypair(ctx context.Context, algo *keymanager.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error)
 
 	// DestroyBindingKey removes the specified binding keypair from the active key registry.
 	// It ensures that the keypair can no longer be used to decrypt (open) sealed secrets.
@@ -73,7 +74,7 @@ type WorkloadService interface {
 	//
 	// Returns:
 	//   - error: An error if the key is not found or deletion fails.
-	DestroyBindingKey(bindingUUID uuid.UUID) error
+	DestroyBindingKey(ctx context.Context, bindingUUID uuid.UUID) error
 
 	// GetBindingKey retrieves metadata and public keys associated with a stored binding keypair.
 	//
@@ -84,7 +85,7 @@ type WorkloadService interface {
 	//   - []byte: The public binding key bytes.
 	//   - *keymanager.HpkeAlgorithm: The HPKE algorithm suite of the binding key.
 	//   - error: An error if the key is not found or has expired.
-	GetBindingKey(id uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error)
+	GetBindingKey(ctx context.Context, id uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error)
 
 	// Open decrypts a sealed ciphertext using the specified binding private key.
 	// It is used by the workload to access shared secrets that have been resealed
@@ -99,13 +100,13 @@ type WorkloadService interface {
 	// Returns:
 	//   - []byte: The original plaintext (the shared secret).
 	//   - error: An error if the binding key is not found, expired, or decryption fails.
-	Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error)
+	Open(ctx context.Context, bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error)
 
 	// DestroyAllKeys removes all binding keypairs from the active key registry.
 	//
 	// Returns:
 	//   - error: An error if deletion fails.
-	DestroyAllKeys() error
+	DestroyAllKeys(ctx context.Context) error
 }
 type keyProtectionService struct{}
 
@@ -123,55 +124,60 @@ type workloadService struct{}
 
 // GenerateBindingKeypair generates a new binding keypair for the workload by
 // delegating to the underlying WorkloadService backend (WSD KCC FFI).
-func (r *workloadService) GenerateBindingKeypair(algo *keymanager.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error) {
-	return wskcc.GenerateBindingKeypair(algo, lifespanSecs)
+func (r *workloadService) GenerateBindingKeypair(ctx context.Context, algo *keymanager.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+	return wskcc.GenerateBindingKeypair(ctx, algo, lifespanSecs)
 }
 
 // DestroyBindingKey removes the specified binding keypair from the active key registry
 // by delegating to the underlying WorkloadService backend (WSD KCC FFI).
-func (r *workloadService) DestroyBindingKey(bindingUUID uuid.UUID) error {
-	return wskcc.DestroyBindingKey(bindingUUID)
+func (r *workloadService) DestroyBindingKey(ctx context.Context, bindingUUID uuid.UUID) error {
+	return wskcc.DestroyBindingKey(ctx, bindingUUID)
 }
 
 // Open decrypts a sealed ciphertext securely using the specified binding private key
 // by delegating to the underlying WorkloadService backend (WSD KCC FFI).
-func (r *workloadService) Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error) {
-	return wskcc.Open(bindingUUID, enc, ciphertext, aad)
+func (r *workloadService) Open(ctx context.Context, bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error) {
+	return wskcc.Open(ctx, bindingUUID, enc, ciphertext, aad)
 }
 
 // GetBindingKey retrieves the public binding key and HPKE algorithm of a stored
 // binding keypair by delegating to the underlying WorkloadService backend (WSD KCC FFI).
-func (r *workloadService) GetBindingKey(id uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
-	return wskcc.GetBindingKey(id)
+func (r *workloadService) GetBindingKey(ctx context.Context, id uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
+	return wskcc.GetBindingKey(ctx, id)
 }
 
 // DestroyAllKeys destroys all binding keys managed by the service by calling wskcc.
-func (r *workloadService) DestroyAllKeys() error {
-	return wskcc.DestroyAllKeys()
+func (r *workloadService) DestroyAllKeys(ctx context.Context) error {
+	return wskcc.DestroyAllKeys(ctx)
 }
 
-func (r *keyProtectionService) GenerateKEMKeypair(_ context.Context, algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
-	return kpskcc.GenerateKEMKeypair(algo, bindingPubKey, lifespanSecs)
+func (r *keyProtectionService) GenerateKEMKeypair(ctx context.Context, algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+	return kpskcc.GenerateKEMKeypair(ctx, algo, bindingPubKey, lifespanSecs)
 }
 
-func (r *keyProtectionService) EnumerateKEMKeys(_ context.Context, limit, offset int32) ([]kpskcc.KEMKeyInfo, bool, error) {
-	return kpskcc.EnumerateKEMKeys(limit, offset)
+func (r *keyProtectionService) EnumerateKEMKeys(ctx context.Context, limit, offset int32) ([]kpskcc.KEMKeyInfo, bool, error) {
+	return kpskcc.EnumerateKEMKeys(ctx, limit, offset)
 }
 
-func (r *keyProtectionService) DestroyKEMKey(_ context.Context, kemUUID uuid.UUID) error {
-	return kpskcc.DestroyKEMKey(kemUUID)
+func (r *keyProtectionService) DestroyKEMKey(ctx context.Context, kemUUID uuid.UUID) error {
+	return kpskcc.DestroyKEMKey(ctx, kemUUID)
 }
 
-func (r *keyProtectionService) DecapAndSeal(_ context.Context, kemUUID uuid.UUID, encapsulatedKey, aad []byte) (sealEnc []byte, sealedCT []byte, err error) {
-	return kpskcc.DecapAndSeal(kemUUID, encapsulatedKey, aad)
+func (r *keyProtectionService) DecapAndSeal(ctx context.Context, kemUUID uuid.UUID, encapsulatedKey, aad []byte) (sealEnc []byte, sealedCT []byte, err error) {
+	return kpskcc.DecapAndSeal(ctx, kemUUID, encapsulatedKey, aad)
 }
 
-func (r *keyProtectionService) GetKEMKey(_ context.Context, id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
-	return kpskcc.GetKEMKey(id)
+func (r *keyProtectionService) GetKEMKey(ctx context.Context, id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+	return kpskcc.GetKEMKey(ctx, id)
 }
 
 type remoteKeyProtectionService struct {
 	client kpspb.KeyProtectionServiceClient
+}
+
+func remoteRPCContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	ctx = telemetry.WithOutgoingCorrelationID(ctx)
+	return context.WithTimeout(ctx, RPCTimeout)
 }
 
 // NewRemoteKeyProtectionService returns a KeyProtectionService that proxies
@@ -221,7 +227,7 @@ func (r *remoteKeyProtectionService) GenerateKEMKeypair(ctx context.Context, alg
 		},
 		LifespanSecs: lifespanSecs,
 	}
-	ctx, cancel := context.WithTimeout(ctx, RPCTimeout)
+	ctx, cancel := remoteRPCContext(ctx)
 	defer cancel()
 	resp, err := r.client.GenerateKEMKeypair(ctx, req)
 	if err != nil {
@@ -239,7 +245,7 @@ func (r *remoteKeyProtectionService) EnumerateKEMKeys(ctx context.Context, limit
 		Limit:  limit,
 		Offset: offset,
 	}
-	ctx, cancel := context.WithTimeout(ctx, RPCTimeout)
+	ctx, cancel := remoteRPCContext(ctx)
 	defer cancel()
 	resp, err := r.client.EnumerateKEMKeys(ctx, req)
 	if err != nil {
@@ -267,7 +273,7 @@ func (r *remoteKeyProtectionService) DestroyKEMKey(ctx context.Context, kemUUID 
 	req := &kpspb.DestroyKEMKeyRequest{
 		KeyHandle: &keymanager.KeyHandle{Handle: kemUUID.String()},
 	}
-	ctx, cancel := context.WithTimeout(ctx, RPCTimeout)
+	ctx, cancel := remoteRPCContext(ctx)
 	defer cancel()
 	_, err := r.client.DestroyKEMKey(ctx, req)
 	return ffiStatusFromGrpcError(err)
@@ -281,7 +287,7 @@ func (r *remoteKeyProtectionService) DecapAndSeal(ctx context.Context, kemUUID u
 		},
 		Aad: aad,
 	}
-	ctx, cancel := context.WithTimeout(ctx, RPCTimeout)
+	ctx, cancel := remoteRPCContext(ctx)
 	defer cancel()
 	resp, err := r.client.DecapAndSeal(ctx, req)
 	if err != nil {
@@ -294,7 +300,7 @@ func (r *remoteKeyProtectionService) GetKEMKey(ctx context.Context, id uuid.UUID
 	req := &kpspb.GetKEMKeyRequest{
 		KeyHandle: &keymanager.KeyHandle{Handle: id.String()},
 	}
-	ctx, cancel := context.WithTimeout(ctx, RPCTimeout)
+	ctx, cancel := remoteRPCContext(ctx)
 	defer cancel()
 	resp, err := r.client.GetKEMKey(ctx, req)
 	if err != nil {
@@ -399,7 +405,7 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 	mux.HandleFunc("POST /v1/keys:destroy", s.handleDestroy)
 
 	s.httpServer = &http.Server{
-		Handler:           mux,
+		Handler:           telemetry.CorrelateHTTP(mux),
 		ReadHeaderTimeout: WsdReadHeaderTimeout,
 	}
 
@@ -418,7 +424,7 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 		return nil, fmt.Errorf("failed to listen on gRPC unix socket %s: %w", grpcSocketPath, err)
 	}
 
-	grpcSrv := grpc.NewServer()
+	grpcSrv := grpc.NewServer(grpc.UnaryInterceptor(telemetry.CorrelationUnaryServerInterceptor))
 	keymanager.RegisterKeyClaimsServiceServer(grpcSrv, s)
 
 	s.grpcServer = grpcSrv
@@ -559,7 +565,7 @@ func (s *Server) handleDecaps(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Open the sealed secret using the binding key via WSD KCC.
-	plaintext, err := s.workloadService.Open(bindingUUID, sealEnc, sealedCT, aad)
+	plaintext, err := s.workloadService.Open(r.Context(), bindingUUID, sealEnc, sealedCT, aad)
 	if err != nil {
 		writeError(w, fmt.Sprintf("failed to open sealed secret: %v", err), httpStatusFromError(err))
 		return
@@ -606,7 +612,7 @@ func (s *Server) generateKEMKey(w http.ResponseWriter, r *http.Request, req *api
 	}
 
 	// Generate binding keypair via WSD KCC FFI.
-	bindingUUID, bindingPubKey, err := s.workloadService.GenerateBindingKeypair(algo, req.Lifespan)
+	bindingUUID, bindingPubKey, err := s.workloadService.GenerateBindingKeypair(r.Context(), algo, req.Lifespan)
 	if err != nil {
 		writeError(w, fmt.Sprintf("failed to generate binding keypair: %v", err), httpStatusFromError(err))
 		return
@@ -779,7 +785,7 @@ func (s *Server) handleDestroy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errKps := s.keyProtectionService.DestroyKEMKey(r.Context(), kemUUID)
-	errWs := s.workloadService.DestroyBindingKey(bindingUUID)
+	errWs := s.workloadService.DestroyBindingKey(r.Context(), bindingUUID)
 
 	// Remove the mapping.
 	s.mu.Lock()
@@ -795,7 +801,7 @@ func (s *Server) handleDestroy(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleGetBindingKeyClaims returns the claims for a binding key identified by its KEM UUID.
-func (s *Server) handleGetBindingKeyClaims(id uuid.UUID) (*keymanager.KeyClaims, error) {
+func (s *Server) handleGetBindingKeyClaims(ctx context.Context, id uuid.UUID) (*keymanager.KeyClaims, error) {
 	// Key ID Lookup. The orchestration layer will look-up the key_handle
 	// in its ActiveKeyRegistry to find the Binding Key ID.
 	bindingID, ok := s.LookupBindingUUID(id)
@@ -804,7 +810,7 @@ func (s *Server) handleGetBindingKeyClaims(id uuid.UUID) (*keymanager.KeyClaims,
 	}
 
 	// Key Metadata Lookup.
-	pubKey, algo, err := s.workloadService.GetBindingKey(bindingID)
+	pubKey, algo, err := s.workloadService.GetBindingKey(ctx, bindingID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get binding key: %w", err)
 	}
@@ -872,7 +878,7 @@ func (s *Server) GetKeyClaims(ctx context.Context, req *keymanager.GetKeyClaimsR
 	var claims *keymanager.KeyClaims
 	switch keyType {
 	case keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING:
-		claims, err = s.handleGetBindingKeyClaims(id)
+		claims, err = s.handleGetBindingKeyClaims(ctx, id)
 		if err != nil {
 			return nil, fmt.Errorf("failed to retrieve binding key claims: %w", err)
 		}
@@ -950,7 +956,7 @@ func (s *Server) performHeartbeat(ctx context.Context, client kpspb.KeyProtectio
 			token := resp.GetKpsBootToken()
 			if *cachedToken != "" && *cachedToken != token {
 				slog.Warn("Token mismatch! Triggering cleanup.")
-				s.cleanupState()
+				s.cleanupState(ctx)
 			} else {
 				slog.Info("Heartbeat handshake successful.")
 			}
@@ -976,7 +982,7 @@ func (s *Server) performHeartbeat(ctx context.Context, client kpspb.KeyProtectio
 		case <-timer.C:
 			if backoff >= maxBackoff {
 				slog.Error("Persistent heartbeat failure after max backoff. Triggering cleanup.")
-				s.cleanupState()
+				s.cleanupState(ctx)
 				return
 			}
 			backoff *= 2
@@ -989,13 +995,14 @@ func (s *Server) performHeartbeat(ctx context.Context, client kpspb.KeyProtectio
 
 // cleanupState purges the KEM to Binding mapping and destroys all binding keys
 // in case of persistent heartbeat failure or token mismatch.
-func (s *Server) cleanupState() {
+func (s *Server) cleanupState(ctx context.Context) {
+	ctx = telemetry.EnsureCorrelationID(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	slog.Info("Purging kemToBindingMap and Binding keys due to heartbeat failure/token mismatch.")
+	telemetry.Logger(ctx).InfoContext(ctx, "Purging kemToBindingMap and Binding keys due to heartbeat failure/token mismatch.")
 
-	if err := s.workloadService.DestroyAllKeys(); err != nil {
-		slog.Error("Failed to destroy all binding keys", "error", err)
+	if err := s.workloadService.DestroyAllKeys(ctx); err != nil {
+		telemetry.Logger(ctx).ErrorContext(ctx, "Failed to destroy all binding keys", "error", err)
 	}
 	s.kemToBindingMap = make(map[uuid.UUID]uuid.UUID)
 }

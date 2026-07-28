@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/GoogleCloudPlatform/key-protection-module/internal/telemetry"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -43,7 +44,7 @@ func TestIntegrationGRPC_EndToEnd(t *testing.T) {
 	kpsGrpcServer := kps.NewGrpcServer(kpsSvc, "test-boot-token")
 
 	// 4. Register the server and serve in a background goroutine
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(grpc.UnaryInterceptor(telemetry.CorrelationUnaryServerInterceptor))
 	kpspb.RegisterKeyProtectionServiceServer(grpcServer, kpsGrpcServer)
 	// Serve always returns an error when Stop is called; ignore.
 	go func() { _ = grpcServer.Serve(listener) }()
@@ -176,35 +177,45 @@ func TestIntegrationGRPC_EndToEnd(t *testing.T) {
 // stubKPS lets a test inject error returns into the gRPC server, one per RPC.
 // All errors default to nil so a zero-value stub behaves as a successful backend.
 type stubKPS struct {
-	generateErr  error
-	decapErr     error
-	enumerateErr error
-	destroyErr   error
-	getErr       error
+	generateErr   error
+	decapErr      error
+	enumerateErr  error
+	destroyErr    error
+	getErr        error
+	correlationID string
 }
 
-func (s *stubKPS) GenerateKEMKeypair(_ context.Context, _ *keymanager.HpkeAlgorithm, _ []byte, _ uint64) (uuid.UUID, []byte, error) {
+func (s *stubKPS) recordCorrelationID(ctx context.Context) {
+	s.correlationID = telemetry.CorrelationID(ctx)
+}
+
+func (s *stubKPS) GenerateKEMKeypair(ctx context.Context, _ *keymanager.HpkeAlgorithm, _ []byte, _ uint64) (uuid.UUID, []byte, error) {
+	s.recordCorrelationID(ctx)
 	if s.generateErr != nil {
 		return uuid.Nil, nil, s.generateErr
 	}
 	return uuid.New(), make([]byte, 32), nil
 }
-func (s *stubKPS) DecapAndSeal(_ context.Context, _ uuid.UUID, _, _ []byte) ([]byte, []byte, error) {
+func (s *stubKPS) DecapAndSeal(ctx context.Context, _ uuid.UUID, _, _ []byte) ([]byte, []byte, error) {
+	s.recordCorrelationID(ctx)
 	if s.decapErr != nil {
 		return nil, nil, s.decapErr
 	}
 	return nil, nil, nil
 }
-func (s *stubKPS) EnumerateKEMKeys(_ context.Context, _, _ int32) ([]kpskcc.KEMKeyInfo, bool, error) {
+func (s *stubKPS) EnumerateKEMKeys(ctx context.Context, _, _ int32) ([]kpskcc.KEMKeyInfo, bool, error) {
+	s.recordCorrelationID(ctx)
 	if s.enumerateErr != nil {
 		return nil, false, s.enumerateErr
 	}
 	return nil, false, nil
 }
-func (s *stubKPS) DestroyKEMKey(_ context.Context, _ uuid.UUID) error {
+func (s *stubKPS) DestroyKEMKey(ctx context.Context, _ uuid.UUID) error {
+	s.recordCorrelationID(ctx)
 	return s.destroyErr
 }
-func (s *stubKPS) GetKEMKey(_ context.Context, _ uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+func (s *stubKPS) GetKEMKey(ctx context.Context, _ uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+	s.recordCorrelationID(ctx)
 	if s.getErr != nil {
 		return nil, nil, nil, 0, s.getErr
 	}
@@ -223,7 +234,7 @@ func setupGRPCRoundTrip(t *testing.T, stub kps.KeyProtectionService, kemUUID uui
 		t.Fatalf("failed to listen on tcp: %v", err)
 	}
 
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(grpc.UnaryInterceptor(telemetry.CorrelationUnaryServerInterceptor))
 	kpspb.RegisterKeyProtectionServiceServer(grpcServer, kps.NewGrpcServer(stub, "test-boot-token"))
 	go func() { _ = grpcServer.Serve(listener) }()
 	t.Cleanup(grpcServer.Stop)
@@ -270,6 +281,7 @@ func setupGRPCRoundTrip(t *testing.T, stub kps.KeyProtectionService, kemUUID uui
 // Covers the four RPCs reachable from the WSD HTTP API and a representative
 // sampling of FFI status codes.
 func TestIntegrationGRPC_ErrorCodeRoundTrip(t *testing.T) {
+	const correlationID = "22223333444455556666777788889999"
 	kemUUID := uuid.New()
 	destroyBody := `{"key_handle": {"handle": "` + kemUUID.String() + `"}}`
 	decapBody := `{"key_handle": {"handle": "` + kemUUID.String() + `"}, ` +
@@ -379,6 +391,7 @@ func TestIntegrationGRPC_ErrorCodeRoundTrip(t *testing.T) {
 			if tc.body != "" {
 				req.Header.Set("Content-Type", "application/json")
 			}
+			req.Header.Set(telemetry.CorrelationIDHeader, correlationID)
 			resp, err := ts.Client().Do(req)
 			if err != nil {
 				t.Fatalf("request failed: %v", err)
@@ -388,6 +401,12 @@ func TestIntegrationGRPC_ErrorCodeRoundTrip(t *testing.T) {
 			if resp.StatusCode != tc.wantHTTPStatus {
 				respBody, _ := io.ReadAll(resp.Body)
 				t.Fatalf("got HTTP %d, want %d: %s", resp.StatusCode, tc.wantHTTPStatus, respBody)
+			}
+			if got := resp.Header.Get(telemetry.CorrelationIDHeader); got != correlationID {
+				t.Fatalf("response correlation ID = %q, want %q", got, correlationID)
+			}
+			if stub.correlationID != correlationID {
+				t.Fatalf("KPS correlation ID = %q, want %q", stub.correlationID, correlationID)
 			}
 		})
 	}

@@ -11,7 +11,14 @@ sys_includes = ["stddef.h", "stdint.h"]
 
 [export]
 item_types = ["enums", "constants", "functions"]
-include = ["Status", "MAX_ALGORITHM_LEN", "MAX_PUBLIC_KEY_LEN", "key_manager_init_telemetry"]
+include = [
+    "Status",
+    "MAX_ALGORITHM_LEN",
+    "MAX_PUBLIC_KEY_LEN",
+    "key_manager_init_telemetry",
+    "key_manager_set_thread_correlation_id",
+    "key_manager_clear_thread_correlation_id",
+]
 
 [enum]
 prefix_with_name = true
