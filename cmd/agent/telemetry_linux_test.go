@@ -70,7 +70,7 @@ func TestRustTelemetryServiceNameAcrossLinkedKCCs(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cmd := exec.Command(os.Args[0], "-test.run=^TestRustTelemetryServiceNameAcrossLinkedKCCs$")
+			cmd := exec.Command("/proc/self/exe", "-test.run=^TestRustTelemetryServiceNameAcrossLinkedKCCs$")
 			cmd.Env = append(os.Environ(), telemetryChildModeEnv+"="+tc.mode)
 			output, err := cmd.CombinedOutput()
 			if err != nil {
