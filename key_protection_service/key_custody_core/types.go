@@ -1,3 +1,4 @@
+// Package kpskcc provides key-protection-service key custody operations.
 package kpskcc
 
 import (

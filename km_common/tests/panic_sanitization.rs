@@ -1,4 +1,4 @@
-use km_common::{KccOperation, Status, ffi_call};
+use km_common::{KccOperation, Status, ffi_call, key_manager_init_telemetry};
 use std::process::Command;
 
 const CHILD_ENV: &str = "KM_COMMON_PANIC_SANITIZATION_CHILD";
@@ -7,6 +7,10 @@ const SECRET_SENTINEL: &str = "panic-secret-sentinel-7a4f1d";
 #[test]
 fn caught_ffi_panics_do_not_emit_sensitive_diagnostics() {
     if std::env::var_os(CHILD_ENV).is_some() {
+        let service_name = b"test_service";
+        unsafe {
+            key_manager_init_telemetry(service_name.as_ptr(), service_name.len());
+        }
         let status = ffi_call(KccOperation::Open, || panic!("{SECRET_SENTINEL}"));
         assert_eq!(status, Status::InternalError);
         return;

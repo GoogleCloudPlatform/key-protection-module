@@ -155,8 +155,8 @@ func GetBindingKey(id uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
 	return pubkey, algo, nil
 }
 
-// InitTelemetry initializes the Rust key custody core telemetry and panic hook via FFI.
-// InitTelemetry translates the Go service name and forwards it to the core Rust library for startup initialization.
+// InitTelemetry initializes the process-wide Rust telemetry and panic hook.
+// It must be called once during process startup, before any KCC operation.
 func InitTelemetry(serviceName string) {
 	cStr := C.CString(serviceName)
 	defer C.free(unsafe.Pointer(cStr))

@@ -16,7 +16,7 @@ func GenerateKEMKeypair(_ *keymanager.HpkeAlgorithm, _ []byte, _ uint64) (uuid.U
 }
 
 // EnumerateKEMKeys is a stub for architectures where the Rust library is not supported.
-func EnumerateKEMKeys(limit, offset int32) ([]KEMKeyInfo, bool, error) {
+func EnumerateKEMKeys(_, _ int32) ([]KEMKeyInfo, bool, error) {
 	return nil, false, fmt.Errorf("EnumerateKEMKeys is not supported on this architecture")
 }
 
@@ -35,6 +35,5 @@ func DestroyKEMKey(_ uuid.UUID) error {
 	return fmt.Errorf("DestroyKEMKey is not supported on this architecture")
 }
 
-// InitTelemetry is a no-op stub for architectures where the Rust library is not supported.
-// InitTelemetry is a no-op stub for environments lacking CGO support.
+// InitTelemetry is a no-op stub for environments lacking Rust KCC support.
 func InitTelemetry(_ string) {}

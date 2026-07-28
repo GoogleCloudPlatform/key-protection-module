@@ -18,7 +18,6 @@ static PANIC_HOOK: std::sync::Once = std::sync::Once::new();
 pub(crate) fn install_sanitized_panic_hook() {
     PANIC_HOOK.call_once(|| {
         std::panic::set_hook(Box::new(|_panic_info| {
-            ensure_telemetry_initialized();
             let service_name = get_service_name();
             tracing::error!(
                 target: "rust_kcc",
@@ -99,7 +98,6 @@ fn ensure_telemetry_initialized() {
 }
 
 pub(crate) fn report_failure(failure: Failure) {
-    ensure_telemetry_initialized();
     let service_name = get_service_name();
 
     tracing::error!(
@@ -112,7 +110,10 @@ pub(crate) fn report_failure(failure: Failure) {
     );
 }
 
-/// Initiates telemetry components inside km_common.
+/// Initializes the process-wide telemetry components inside `km_common`.
+///
+/// Call this exactly once during process startup, before invoking any KCC operation.
+/// Only the first call sets the service name.
 ///
 /// # Safety
 /// `service_name_ptr` must point to a valid UTF-8 string buffer of length `service_name_len`.

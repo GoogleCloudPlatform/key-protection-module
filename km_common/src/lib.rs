@@ -26,7 +26,6 @@ where
     F: FnOnce() -> Result<(), Status>,
     R: FnOnce(telemetry::Failure),
 {
-    telemetry::install_sanitized_panic_hook();
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
         Ok(Ok(())) => Status::Success,
         Ok(Err(status)) => {
@@ -61,7 +60,6 @@ where
     F: FnOnce() -> Result<i32, Status>,
     R: FnOnce(telemetry::Failure),
 {
-    telemetry::install_sanitized_panic_hook();
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
         Ok(Ok(val)) => val,
         Ok(Err(status)) => {

@@ -379,7 +379,6 @@ func New(_ context.Context, socketPath string, mode keymanager.KeyProtectionMech
 
 // NewServer creates a new WSD server with the given dependencies.
 func NewServer(keyProtectionService KeyProtectionService, workloadService WorkloadService, socketPath string, mode keymanager.KeyProtectionMechanism) (*Server, error) {
-	wskcc.InitTelemetry("workload_service")
 	s := &Server{
 		keyProtectionService: keyProtectionService,
 		workloadService:      workloadService,

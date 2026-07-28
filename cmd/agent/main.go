@@ -38,18 +38,22 @@ func main() {
 	mode := parseEnvEnum("KEY_PROTECTION_MECHANISM", keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED, keymanager.KeyProtectionMechanism_value)
 	role := parseEnvEnum("SERVICE_ROLE", keymanager.ServiceRole_SERVICE_ROLE_WSD, keymanager.ServiceRole_value)
 
+	runAsKPS := mode == keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM && role == keymanager.ServiceRole_SERVICE_ROLE_KPS
 	serviceName := "workload_service"
-	if mode == keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM && role == keymanager.ServiceRole_SERVICE_ROLE_KPS {
+	if runAsKPS {
 		serviceName = "key_protection_service"
 	}
 	telemetry.InitLogger(serviceName)
-	wskcc.InitTelemetry(serviceName)
-	kpskcc.InitTelemetry(serviceName)
+	if runAsKPS {
+		kpskcc.InitTelemetry(serviceName)
+	} else {
+		wskcc.InitTelemetry(serviceName)
+	}
 
 	slog.Info("Starting Key Protection Agent", "mode", mode, "role", role)
 
 	var err error
-	if mode == keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM && role == keymanager.ServiceRole_SERVICE_ROLE_KPS {
+	if runAsKPS {
 		err = runKps(ctx, *kpsPort, mode, role)
 	} else {
 		err = runWsd(ctx, *socketPath, mode, *kpsVMIP)

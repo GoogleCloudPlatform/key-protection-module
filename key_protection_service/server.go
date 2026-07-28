@@ -7,7 +7,6 @@ import (
 	"net"
 	"time"
 
-	kpskcc "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/key_custody_core"
 	kpsapi "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/proto"
 	keymanager "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto"
 	"github.com/google/uuid"
@@ -85,7 +84,6 @@ func NewServer(port int, mode keymanager.KeyProtectionMechanism, role keymanager
 
 // newServerWithKPS creates a new KPS gRPC server with the given dependencies.
 func newServerWithKPS(port int, kps KeyProtectionService, mode keymanager.KeyProtectionMechanism, role keymanager.ServiceRole) (*Server, error) {
-	kpskcc.InitTelemetry("key_protection_service")
 	addr := fmt.Sprintf(":%d", port)
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
