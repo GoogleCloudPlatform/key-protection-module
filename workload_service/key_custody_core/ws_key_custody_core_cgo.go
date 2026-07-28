@@ -10,14 +10,18 @@ package wskcc
 #cgo LDFLAGS: -L${SRCDIR}/../../target/release -L${SRCDIR}/../../target/debug -lws_key_custody_core
 #cgo LDFLAGS: -lcrypto -lssl
 #cgo LDFLAGS: -lpthread -ldl -lm -lstdc++
+#include <stdlib.h>
 #include "include/ws_key_custody_core.h"
 */
 import "C"
 
 import (
+	"context"
 	"fmt"
+	"runtime"
 	"unsafe"
 
+	"github.com/GoogleCloudPlatform/key-protection-module/internal/telemetry"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 
@@ -30,9 +34,25 @@ const (
 	sharedSecretSize  = 32
 )
 
+func withThreadCorrelationID(ctx context.Context, call func()) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	// Clear first so a request without an ID can never inherit stale native thread state.
+	C.key_manager_clear_thread_correlation_id()
+	if id := telemetry.CorrelationID(ctx); id != "" {
+		idPtr := (*C.uint8_t)(unsafe.Pointer(unsafe.StringData(id)))
+		if status := C.key_manager_set_thread_correlation_id(idPtr, C.size_t(len(id))); keymanager.Status(status) != keymanager.Status_STATUS_SUCCESS {
+			C.key_manager_clear_thread_correlation_id()
+		}
+	}
+	defer C.key_manager_clear_thread_correlation_id()
+	call()
+}
+
 // GenerateBindingKeypair generates an X25519 HPKE binding keypair via Rust FFI.
 // Returns the UUID key handle and the public key bytes.
-func GenerateBindingKeypair(algo *keymanager.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+func GenerateBindingKeypair(ctx context.Context, algo *keymanager.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	var uuidBytes [uuidSize]byte
 	var pubkeyBuf [bindingPubKeySize]byte
 	pubkeyLen := C.size_t(len(pubkeyBuf))
@@ -42,14 +62,18 @@ func GenerateBindingKeypair(algo *keymanager.HpkeAlgorithm, lifespanSecs uint64)
 		return uuid.Nil, nil, fmt.Errorf("failed to marshal HpkeAlgorithm: %v", err)
 	}
 
-	if rc := C.key_manager_generate_binding_keypair(
-		(*C.uint8_t)(unsafe.Pointer(&algoBytes[0])),
-		C.size_t(len(algoBytes)),
-		C.uint64_t(lifespanSecs),
-		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
-		(*C.uint8_t)(unsafe.Pointer(&pubkeyBuf[0])),
-		pubkeyLen,
-	); keymanager.Status(rc) != keymanager.Status_STATUS_SUCCESS {
+	var rc C.Status
+	withThreadCorrelationID(ctx, func() {
+		rc = C.key_manager_generate_binding_keypair(
+			(*C.uint8_t)(unsafe.Pointer(&algoBytes[0])),
+			C.size_t(len(algoBytes)),
+			C.uint64_t(lifespanSecs),
+			(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
+			(*C.uint8_t)(unsafe.Pointer(&pubkeyBuf[0])),
+			pubkeyLen,
+		)
+	})
+	if keymanager.Status(rc) != keymanager.Status_STATUS_SUCCESS {
 		return uuid.Nil, nil, keymanager.Status(rc).ToStatus()
 	}
 
@@ -64,24 +88,30 @@ func GenerateBindingKeypair(algo *keymanager.HpkeAlgorithm, lifespanSecs uint64)
 }
 
 // DestroyBindingKey destroys the binding key identified by bindingUUID via Rust FFI.
-func DestroyBindingKey(bindingUUID uuid.UUID) error {
+func DestroyBindingKey(ctx context.Context, bindingUUID uuid.UUID) error {
 	uuidBytes := bindingUUID[:]
-	rc := C.key_manager_destroy_binding_key(
-		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
-	)
+	var rc C.Status
+	withThreadCorrelationID(ctx, func() {
+		rc = C.key_manager_destroy_binding_key(
+			(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
+		)
+	})
 	return keymanager.Status(rc).ToStatus()
 }
 
 // DestroyAllKeys destroys all binding keys via Rust FFI.
-func DestroyAllKeys() error {
-	rc := C.key_manager_destroy_all_binding_keys()
+func DestroyAllKeys(ctx context.Context) error {
+	var rc C.Status
+	withThreadCorrelationID(ctx, func() {
+		rc = C.key_manager_destroy_all_binding_keys()
+	})
 	return keymanager.Status(rc).ToStatus()
 }
 
 // Open decrypts a sealed ciphertext using the binding key identified by
 // bindingUUID via Rust FFI (HPKE Open).
 // Returns the decrypted plaintext (shared secret).
-func Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error) {
+func Open(ctx context.Context, bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error) {
 	if len(enc) == 0 {
 		return nil, fmt.Errorf("enc must not be empty")
 	}
@@ -104,17 +134,21 @@ func Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error) {
 		aadLen = C.size_t(len(aad))
 	}
 
-	if rc := C.key_manager_open(
-		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
-		(*C.uint8_t)(unsafe.Pointer(&enc[0])),
-		C.size_t(len(enc)),
-		(*C.uint8_t)(unsafe.Pointer(&ciphertext[0])),
-		C.size_t(len(ciphertext)),
-		aadPtr,
-		aadLen,
-		(*C.uint8_t)(unsafe.Pointer(&outPT[0])),
-		outPTLen,
-	); keymanager.Status(rc) != keymanager.Status_STATUS_SUCCESS {
+	var rc C.Status
+	withThreadCorrelationID(ctx, func() {
+		rc = C.key_manager_open(
+			(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
+			(*C.uint8_t)(unsafe.Pointer(&enc[0])),
+			C.size_t(len(enc)),
+			(*C.uint8_t)(unsafe.Pointer(&ciphertext[0])),
+			C.size_t(len(ciphertext)),
+			aadPtr,
+			aadLen,
+			(*C.uint8_t)(unsafe.Pointer(&outPT[0])),
+			outPTLen,
+		)
+	})
+	if keymanager.Status(rc) != keymanager.Status_STATUS_SUCCESS {
 		return nil, keymanager.Status(rc).ToStatus()
 	}
 
@@ -124,7 +158,7 @@ func Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error) {
 }
 
 // GetBindingKey retrieves the binding public key and HpkeAlgorithm via Rust FFI.
-func GetBindingKey(id uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
+func GetBindingKey(ctx context.Context, id uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
 	var uuidBytes [uuidSize]byte
 	copy(uuidBytes[:], id[:])
 
@@ -133,13 +167,17 @@ func GetBindingKey(id uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
 	var algoBuf [C.MAX_ALGORITHM_LEN]byte
 	algoLenC := C.size_t(len(algoBuf))
 
-	if rc := C.key_manager_get_binding_key(
-		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
-		(*C.uint8_t)(unsafe.Pointer(&pubkeyBuf[0])),
-		pubkeyLen,
-		(*C.uint8_t)(unsafe.Pointer(&algoBuf[0])),
-		&algoLenC,
-	); keymanager.Status(rc) != keymanager.Status_STATUS_SUCCESS {
+	var rc C.Status
+	withThreadCorrelationID(ctx, func() {
+		rc = C.key_manager_get_binding_key(
+			(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
+			(*C.uint8_t)(unsafe.Pointer(&pubkeyBuf[0])),
+			pubkeyLen,
+			(*C.uint8_t)(unsafe.Pointer(&algoBuf[0])),
+			&algoLenC,
+		)
+	})
+	if keymanager.Status(rc) != keymanager.Status_STATUS_SUCCESS {
 		return nil, nil, keymanager.Status(rc).ToStatus()
 	}
 
@@ -152,4 +190,12 @@ func GetBindingKey(id uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
 	}
 
 	return pubkey, algo, nil
+}
+
+// InitTelemetry initializes the Rust key custody core telemetry and panic hook via FFI.
+// InitTelemetry translates the Go service name and forwards it to the core Rust library for startup initialization.
+func InitTelemetry(serviceName string) {
+	cStr := C.CString(serviceName)
+	defer C.free(unsafe.Pointer(cStr))
+	C.key_manager_init_telemetry((*C.uint8_t)(unsafe.Pointer(cStr)), C.size_t(len(serviceName)))
 }

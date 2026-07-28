@@ -4,6 +4,7 @@ package wskcc
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 
@@ -19,7 +20,7 @@ var defaultAlgo = &keymanager.HpkeAlgorithm{
 }
 
 func TestIntegrationGenerateBindingKeypair(t *testing.T) {
-	id, pubKey, err := GenerateBindingKeypair(defaultAlgo, 3600)
+	id, pubKey, err := GenerateBindingKeypair(context.Background(), defaultAlgo, 3600)
 	if err != nil {
 		t.Fatalf("GenerateBindingKeypair failed: %v", err)
 	}
@@ -33,11 +34,11 @@ func TestIntegrationGenerateBindingKeypair(t *testing.T) {
 }
 
 func TestIntegrationGenerateBindingKeypairUniqueness(t *testing.T) {
-	id1, pubKey1, err := GenerateBindingKeypair(defaultAlgo, 3600)
+	id1, pubKey1, err := GenerateBindingKeypair(context.Background(), defaultAlgo, 3600)
 	if err != nil {
 		t.Fatalf("first GenerateBindingKeypair failed: %v", err)
 	}
-	id2, pubKey2, err := GenerateBindingKeypair(defaultAlgo, 3600)
+	id2, pubKey2, err := GenerateBindingKeypair(context.Background(), defaultAlgo, 3600)
 	if err != nil {
 		t.Fatalf("second GenerateBindingKeypair failed: %v", err)
 	}
@@ -50,12 +51,12 @@ func TestIntegrationGenerateBindingKeypairUniqueness(t *testing.T) {
 }
 
 func TestIntegrationGetBindingKey(t *testing.T) {
-	id, pubKey, err := GenerateBindingKeypair(defaultAlgo, 3600)
+	id, pubKey, err := GenerateBindingKeypair(context.Background(), defaultAlgo, 3600)
 	if err != nil {
 		t.Fatalf("GenerateBindingKeypair failed: %v", err)
 	}
 
-	retrievedPubKey, retrievedAlgo, err := GetBindingKey(id)
+	retrievedPubKey, retrievedAlgo, err := GetBindingKey(context.Background(), id)
 	if err != nil {
 		t.Fatalf("GetBindingKey failed: %v", err)
 	}
@@ -74,7 +75,7 @@ func TestIntegrationGetBindingKey(t *testing.T) {
 }
 
 func TestIntegrationGetBindingKeyNotFound(t *testing.T) {
-	_, _, err := GetBindingKey(uuid.New())
+	_, _, err := GetBindingKey(context.Background(), uuid.New())
 	if err == nil {
 		t.Fatal("expected error for non-existent UUID")
 	}

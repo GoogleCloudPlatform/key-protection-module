@@ -13,8 +13,8 @@ thiserror.workspace = true
 bssl-crypto.workspace = true
 clear_on_drop.workspace = true
 secrecy = "0.10.3"
-tracing = "0.1"
-tracing-subscriber = "0.3"
+tracing.workspace = true
+tracing-subscriber.workspace = true
 tracing-journald = "0.3"
 
 [features]

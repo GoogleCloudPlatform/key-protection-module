@@ -3,6 +3,7 @@
 package kpskcc
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -12,27 +13,27 @@ import (
 func TestStubErrors(t *testing.T) {
 	expected := "not supported on this architecture"
 
-	_, _, err := GenerateKEMKeypair(nil, nil, 0)
+	_, _, err := GenerateKEMKeypair(context.Background(), nil, nil, 0)
 	if err == nil || !strings.Contains(err.Error(), expected) {
 		t.Errorf("GenerateKEMKeypair() error = %v, want %q", err, expected)
 	}
 
-	_, _, err = EnumerateKEMKeys(0, 0)
+	_, _, err = EnumerateKEMKeys(context.Background(), 0, 0)
 	if err == nil || !strings.Contains(err.Error(), expected) {
 		t.Errorf("EnumerateKEMKeys() error = %v, want %q", err, expected)
 	}
 
-	_, _, _, _, err = GetKEMKey(uuid.Nil)
+	_, _, _, _, err = GetKEMKey(context.Background(), uuid.Nil)
 	if err == nil || !strings.Contains(err.Error(), expected) {
 		t.Errorf("GetKEMKey() error = %v, want %q", err, expected)
 	}
 
-	_, _, err = DecapAndSeal(uuid.Nil, nil, nil)
+	_, _, err = DecapAndSeal(context.Background(), uuid.Nil, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), expected) {
 		t.Errorf("DecapAndSeal() error = %v, want %q", err, expected)
 	}
 
-	err = DestroyKEMKey(uuid.Nil)
+	err = DestroyKEMKey(context.Background(), uuid.Nil)
 	if err == nil || !strings.Contains(err.Error(), expected) {
 		t.Errorf("DestroyKEMKey() error = %v, want %q", err, expected)
 	}

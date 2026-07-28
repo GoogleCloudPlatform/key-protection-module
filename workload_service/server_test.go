@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/GoogleCloudPlatform/key-protection-module/internal/telemetry"
 	kpskcc "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/key_custody_core"
 	kpsapi "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/proto"
 	api "github.com/GoogleCloudPlatform/key-protection-module/workload_service/proto"
@@ -57,18 +58,20 @@ type mockWorkloadService struct {
 	receivedEnc   []byte
 	receivedCT    []byte
 	receivedAAD   []byte
+	correlationID string
 }
 
-func (m *mockWorkloadService) GenerateBindingKeypair(_ *keymanager.HpkeAlgorithm, _ uint64) (uuid.UUID, []byte, error) {
+func (m *mockWorkloadService) GenerateBindingKeypair(ctx context.Context, _ *keymanager.HpkeAlgorithm, _ uint64) (uuid.UUID, []byte, error) {
+	m.correlationID = telemetry.CorrelationID(ctx)
 	return m.uuid, m.pubKey, m.err
 }
 
-func (m *mockWorkloadService) DestroyBindingKey(bindingUUID uuid.UUID) error {
+func (m *mockWorkloadService) DestroyBindingKey(_ context.Context, bindingUUID uuid.UUID) error {
 	m.destroyedUUID = bindingUUID
 	return m.destroyErr
 }
 
-func (m *mockWorkloadService) Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error) {
+func (m *mockWorkloadService) Open(_ context.Context, bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error) {
 	m.receivedUUID = bindingUUID
 	m.receivedEnc = enc
 	m.receivedCT = ciphertext
@@ -76,11 +79,11 @@ func (m *mockWorkloadService) Open(bindingUUID uuid.UUID, enc, ciphertext, aad [
 	return m.plaintext, m.err
 }
 
-func (m *mockWorkloadService) GetBindingKey(_ uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
+func (m *mockWorkloadService) GetBindingKey(_ context.Context, _ uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
 	return m.pubKey, m.algo, m.err
 }
 
-func (m *mockWorkloadService) DestroyAllKeys() error {
+func (m *mockWorkloadService) DestroyAllKeys(_ context.Context) error {
 	return nil
 }
 
@@ -103,9 +106,11 @@ type mockKeyProtectionService struct {
 	receivedAAD           []byte
 	enumeratedKeys        []kpskcc.KEMKeyInfo
 	enumerateErr          error
+	correlationID         string
 }
 
-func (m *mockKeyProtectionService) GenerateKEMKeypair(_ context.Context, _ *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+func (m *mockKeyProtectionService) GenerateKEMKeypair(ctx context.Context, _ *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+	m.correlationID = telemetry.CorrelationID(ctx)
 	m.receivedPubKey = bindingPubKey
 	m.receivedLifespan = lifespanSecs
 	return m.uuid, m.pubKey, m.err
@@ -447,18 +452,27 @@ func TestHandleGenerateKeyBadJSON(t *testing.T) {
 }
 
 func TestHandleGenerateKeyBindingGenError(t *testing.T) {
+	const correlationID = "11112222333344445555666677778888"
+	workload := &mockWorkloadService{err: fmt.Errorf("binding FFI error")}
 	srv := newTestServer(t,
 		&mockKeyProtectionService{pubKey: make([]byte, 32)},
-		&mockWorkloadService{err: fmt.Errorf("binding FFI error")},
+		workload,
 	)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_key", bytes.NewReader(validGenerateBody()))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(telemetry.CorrelationIDHeader, correlationID)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("expected status 500, got %d", w.Code)
+	}
+	if workload.correlationID != correlationID {
+		t.Fatalf("WSD KCC correlation ID = %q, want %q", workload.correlationID, correlationID)
+	}
+	if got := w.Header().Get(telemetry.CorrelationIDHeader); got != correlationID {
+		t.Fatalf("response correlation ID = %q, want %q", got, correlationID)
 	}
 }
 
@@ -495,18 +509,24 @@ func TestHandleGenerateKeyFlexibleLifespan(t *testing.T) {
 }
 
 func TestHandleGenerateKeyKEMGenError(t *testing.T) {
+	const correlationID = "3333444455556666777788889999aaaa"
+	kps := &mockKeyProtectionService{err: fmt.Errorf("KEM FFI error")}
 	srv := newTestServer(t,
-		&mockKeyProtectionService{err: fmt.Errorf("KEM FFI error")},
+		kps,
 		&mockWorkloadService{uuid: uuid.New(), pubKey: make([]byte, 32)},
 	)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_key", bytes.NewReader(validGenerateBody()))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(telemetry.CorrelationIDHeader, correlationID)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("expected status 500, got %d", w.Code)
+	}
+	if kps.correlationID != correlationID {
+		t.Fatalf("KPS KCC correlation ID = %q, want %q", kps.correlationID, correlationID)
 	}
 }
 

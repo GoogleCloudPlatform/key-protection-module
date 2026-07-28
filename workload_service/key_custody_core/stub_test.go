@@ -3,6 +3,7 @@
 package wskcc
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -12,22 +13,22 @@ import (
 func TestStubErrors(t *testing.T) {
 	expected := "not supported on this architecture"
 
-	_, _, err := GenerateBindingKeypair(nil, 0)
+	_, _, err := GenerateBindingKeypair(context.Background(), nil, 0)
 	if err == nil || !strings.Contains(err.Error(), expected) {
 		t.Errorf("GenerateBindingKeypair() error = %v, want %q", err, expected)
 	}
 
-	_, err = Open(uuid.Nil, nil, nil, nil)
+	_, err = Open(context.Background(), uuid.Nil, nil, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), expected) {
 		t.Errorf("Open() error = %v, want %q", err, expected)
 	}
 
-	err = DestroyBindingKey(uuid.Nil)
+	err = DestroyBindingKey(context.Background(), uuid.Nil)
 	if err == nil || !strings.Contains(err.Error(), expected) {
 		t.Errorf("DestroyBindingKey() error = %v, want %q", err, expected)
 	}
 
-	_, _, err = GetBindingKey(uuid.Nil)
+	_, _, err = GetBindingKey(context.Background(), uuid.Nil)
 	if err == nil || !strings.Contains(err.Error(), expected) {
 		t.Errorf("GetBindingKey() error = %v, want %q", err, expected)
 	}

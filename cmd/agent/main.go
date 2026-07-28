@@ -15,8 +15,10 @@ import (
 
 	"github.com/GoogleCloudPlatform/key-protection-module/internal/telemetry"
 	keyprotectionservice "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service"
+	kpskcc "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/key_custody_core"
 	keymanager "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto"
 	workloadservice "github.com/GoogleCloudPlatform/key-protection-module/workload_service"
+	wskcc "github.com/GoogleCloudPlatform/key-protection-module/workload_service/key_custody_core"
 )
 
 const (
@@ -41,6 +43,8 @@ func main() {
 		serviceName = "key_protection_service"
 	}
 	telemetry.InitLogger(serviceName)
+	wskcc.InitTelemetry(serviceName)
+	kpskcc.InitTelemetry(serviceName)
 
 	slog.Info("Starting Key Protection Agent", "mode", mode, "role", role)
 

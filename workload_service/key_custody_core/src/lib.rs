@@ -2,7 +2,7 @@ use km_common::crypto::PublicKey;
 use km_common::crypto::secret_box::SecretBox;
 use km_common::key_types::{KeyRecord, KeyRegistry, KeySpec};
 use km_common::proto::{HpkeAlgorithm, Status};
-use km_common::{MAX_ALGORITHM_LEN, MAX_PUBLIC_KEY_LEN};
+use km_common::{KccOperation, MAX_ALGORITHM_LEN, MAX_PUBLIC_KEY_LEN};
 use prost::Message;
 use std::slice;
 use std::sync::Arc;
@@ -67,7 +67,7 @@ pub unsafe extern "C" fn key_manager_generate_binding_keypair(
     out_pubkey: *mut u8,
     out_pubkey_len: usize,
 ) -> Status {
-    km_common::ffi_call(|| {
+    km_common::ffi_call(KccOperation::GenerateBindingKeypair, || {
         // Safety Invariant Checks
         if out_pubkey.is_null() || out_uuid.is_null() || algo_ptr.is_null() || algo_len == 0 {
             return Err(Status::InvalidArgument);
@@ -106,7 +106,7 @@ pub unsafe extern "C" fn key_manager_generate_binding_keypair(
 /// * `Status::NotFound` if the key was not found.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn key_manager_destroy_binding_key(uuid_bytes: *const u8) -> Status {
-    km_common::ffi_call(|| {
+    km_common::ffi_call(KccOperation::DestroyBindingKey, || {
         if uuid_bytes.is_null() {
             return Err(Status::InvalidArgument);
         }
@@ -128,7 +128,7 @@ pub unsafe extern "C" fn key_manager_destroy_binding_key(uuid_bytes: *const u8) 
 /// * `Status::Success` on success.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn key_manager_destroy_all_binding_keys() -> Status {
-    km_common::ffi_call(|| {
+    km_common::ffi_call(KccOperation::DestroyAllBindingKeys, || {
         KEY_REGISTRY.remove_all_keys();
         Ok(())
     })
@@ -191,7 +191,7 @@ pub unsafe extern "C" fn key_manager_open(
     out_plaintext: *mut u8,
     out_plaintext_len: usize,
 ) -> Status {
-    km_common::ffi_call(|| {
+    km_common::ffi_call(KccOperation::Open, || {
         if uuid_bytes.is_null()
             || enc.is_null()
             || ciphertext.is_null()
@@ -306,7 +306,7 @@ pub unsafe extern "C" fn key_manager_enumerate_binding_keys(
     offset: usize,
     out_has_more: Option<&mut bool>,
 ) -> i32 {
-    km_common::ffi_call_i32(|| {
+    km_common::ffi_call_i32(KccOperation::EnumerateBindingKeys, || {
         if out_entries.is_null() {
             return Err(Status::InvalidArgument);
         }
@@ -357,7 +357,7 @@ pub unsafe extern "C" fn key_manager_get_binding_key(
     out_algo: *mut u8,
     out_algo_len: *mut usize,
 ) -> Status {
-    km_common::ffi_call(|| {
+    km_common::ffi_call(KccOperation::GetBindingKey, || {
         if uuid_bytes.is_null()
             || out_pubkey.is_null()
             || out_pubkey_len == 0
