@@ -22,8 +22,10 @@ import (
 )
 
 const (
-	defaultSocketPath = "/run/container_launcher/kmaserver.sock"
-	defaultKpsPort    = 50050
+	defaultSocketPath        = "/run/container_launcher/kmaserver.sock"
+	defaultKpsPort           = 50050
+	workloadServiceName      = "workload_service"
+	keyProtectionServiceName = "key_protection_service"
 )
 
 func main() {
@@ -39,9 +41,9 @@ func main() {
 	role := parseEnvEnum("SERVICE_ROLE", keymanager.ServiceRole_SERVICE_ROLE_WSD, keymanager.ServiceRole_value)
 
 	runAsKPS := mode == keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM && role == keymanager.ServiceRole_SERVICE_ROLE_KPS
-	serviceName := "workload_service"
+	serviceName := workloadServiceName
 	if runAsKPS {
-		serviceName = "key_protection_service"
+		serviceName = keyProtectionServiceName
 	}
 	telemetry.InitLogger(serviceName)
 	if runAsKPS {

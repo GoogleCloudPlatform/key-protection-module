@@ -35,9 +35,9 @@ func TestRustTelemetryServiceNameAcrossLinkedKCCs(t *testing.T) {
 		case "wsd":
 			// Emulated WSD initializes telemetry through the WSD wrapper, then uses
 			// both KCCs. A KPS failure must retain the WSD process service name.
-			wskcc.InitTelemetry("workload_service")
+			wskcc.InitTelemetry(workloadServiceName)
 		case "kps":
-			kpskcc.InitTelemetry("key_protection_service")
+			kpskcc.InitTelemetry(keyProtectionServiceName)
 		default:
 			t.Fatalf("unknown child mode %q", mode)
 		}
@@ -57,14 +57,14 @@ func TestRustTelemetryServiceNameAcrossLinkedKCCs(t *testing.T) {
 		{
 			name:              "WSD initialization applies to KPS KCC",
 			mode:              "wsd",
-			wantService:       "workload_service",
-			unexpectedService: "key_protection_service",
+			wantService:       workloadServiceName,
+			unexpectedService: keyProtectionServiceName,
 		},
 		{
 			name:              "KPS initialization applies to KPS KCC",
 			mode:              "kps",
-			wantService:       "key_protection_service",
-			unexpectedService: "workload_service",
+			wantService:       keyProtectionServiceName,
+			unexpectedService: workloadServiceName,
 		},
 	}
 
