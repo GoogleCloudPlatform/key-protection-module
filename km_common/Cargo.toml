@@ -15,7 +15,6 @@ clear_on_drop.workspace = true
 secrecy = "0.10.3"
 tracing.workspace = true
 tracing-subscriber.workspace = true
-tracing-journald = "0.3"
 
 [features]
 test-utils = []
