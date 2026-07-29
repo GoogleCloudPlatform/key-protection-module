@@ -22,6 +22,7 @@ test-utils = []
 
 [dev-dependencies]
 hex.workspace = true
+strum = { version = "0.28.0", features = ["derive"] }
 
 [build-dependencies]
 prost-build.workspace = true

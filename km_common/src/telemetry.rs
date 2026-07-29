@@ -30,6 +30,12 @@ pub(crate) fn install_sanitized_panic_hook() {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OperationDescriptor {
+    pub name: &'static str,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(test, derive(strum::EnumIter))]
 pub enum KccOperation {
     GenerateKemKeypair,
     DestroyKemKey,
@@ -45,35 +51,84 @@ pub enum KccOperation {
 }
 
 impl KccOperation {
-    fn as_str(self) -> &'static str {
+    pub const fn descriptor(self) -> OperationDescriptor {
         match self {
-            Self::GenerateKemKeypair => "generate_kem_keypair",
-            Self::DestroyKemKey => "destroy_kem_key",
-            Self::EnumerateKemKeys => "enumerate_kem_keys",
-            Self::DecapAndSeal => "decap_and_seal",
-            Self::GetKemKey => "get_kem_key",
-            Self::GenerateBindingKeypair => "generate_binding_keypair",
-            Self::DestroyBindingKey => "destroy_binding_key",
-            Self::DestroyAllBindingKeys => "destroy_all_binding_keys",
-            Self::Open => "open",
-            Self::EnumerateBindingKeys => "enumerate_binding_keys",
-            Self::GetBindingKey => "get_binding_key",
+            Self::GenerateKemKeypair => OperationDescriptor {
+                name: "generate_kem_keypair",
+            },
+            Self::DestroyKemKey => OperationDescriptor {
+                name: "destroy_kem_key",
+            },
+            Self::EnumerateKemKeys => OperationDescriptor {
+                name: "enumerate_kem_keys",
+            },
+            Self::DecapAndSeal => OperationDescriptor {
+                name: "decap_and_seal",
+            },
+            Self::GetKemKey => OperationDescriptor {
+                name: "get_kem_key",
+            },
+            Self::GenerateBindingKeypair => OperationDescriptor {
+                name: "generate_binding_keypair",
+            },
+            Self::DestroyBindingKey => OperationDescriptor {
+                name: "destroy_binding_key",
+            },
+            Self::DestroyAllBindingKeys => OperationDescriptor {
+                name: "destroy_all_binding_keys",
+            },
+            Self::Open => OperationDescriptor { name: "open" },
+            Self::EnumerateBindingKeys => OperationDescriptor {
+                name: "enumerate_binding_keys",
+            },
+            Self::GetBindingKey => OperationDescriptor {
+                name: "get_binding_key",
+            },
         }
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        self.descriptor().name
+    }
+}
+
+impl AsRef<str> for KccOperation {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl std::fmt::Display for KccOperation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(strum::EnumIter))]
 pub(crate) enum FailureKind {
     Error,
     Panic,
 }
 
 impl FailureKind {
-    fn as_str(self) -> &'static str {
+    pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::Error => "error",
             Self::Panic => "panic",
         }
+    }
+}
+
+impl AsRef<str> for FailureKind {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl std::fmt::Display for FailureKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 
@@ -247,5 +302,37 @@ mod tests {
             !output_text.contains("super_secret_panic_payload_12345"),
             "Panic payload must not leak into logs: {output_text}"
         );
+    }
+
+    #[test]
+    fn test_all_operations_descriptor_invariants() {
+        use strum::IntoEnumIterator;
+        let mut seen = std::collections::HashSet::new();
+
+        for op in KccOperation::iter() {
+            let name = op.descriptor().name;
+            assert!(!name.is_empty(), "Descriptor name must not be empty");
+            assert!(
+                name.chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'),
+                "Descriptor name must be snake_case (lowercase ASCII, digits, and underscores)"
+            );
+            assert!(seen.insert(name), "Descriptor names must be unique");
+        }
+    }
+
+    #[test]
+    fn test_all_operations_report_failure_without_panicking() {
+        use strum::IntoEnumIterator;
+
+        for operation in KccOperation::iter() {
+            for kind in FailureKind::iter() {
+                report_failure(Failure {
+                    operation,
+                    status: Status::Unspecified,
+                    kind,
+                });
+            }
+        }
     }
 }
