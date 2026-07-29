@@ -7,11 +7,11 @@ no_includes = true
 style = "type"
 documentation = false
 usize_is_size_t = true
-sys_includes = ["stdint.h"]
+sys_includes = ["stddef.h", "stdint.h"]
 
 [export]
-item_types = ["enums", "constants"]
-include = ["Status", "MAX_ALGORITHM_LEN", "MAX_PUBLIC_KEY_LEN"]
+item_types = ["enums", "constants", "functions"]
+include = ["Status", "MAX_ALGORITHM_LEN", "MAX_PUBLIC_KEY_LEN", "key_manager_init_telemetry"]
 
 [enum]
 prefix_with_name = true

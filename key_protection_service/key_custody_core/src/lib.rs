@@ -1,7 +1,7 @@
 use km_common::crypto::PublicKey;
 use km_common::key_types::{KeyRecord, KeyRegistry, KeySpec};
 use km_common::proto::{HpkeAlgorithm, Status};
-use km_common::{MAX_ALGORITHM_LEN, MAX_PUBLIC_KEY_LEN};
+use km_common::{KccOperation, MAX_ALGORITHM_LEN, MAX_PUBLIC_KEY_LEN};
 
 use prost::Message;
 use std::slice;
@@ -72,7 +72,7 @@ pub unsafe extern "C" fn key_manager_generate_kem_keypair(
     out_pubkey: *mut u8,
     out_pubkey_len: usize,
 ) -> Status {
-    km_common::ffi_call(|| {
+    km_common::ffi_call(KccOperation::GenerateKemKeypair, || {
         // Convert to Safe Types
         if binding_pubkey.is_null()
             || binding_pubkey_len == 0
@@ -120,7 +120,7 @@ pub unsafe extern "C" fn key_manager_generate_kem_keypair(
 /// * `Status::NotFound` if the key was not found.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn key_manager_destroy_kem_key(uuid_bytes: *const u8) -> Status {
-    km_common::ffi_call(|| {
+    km_common::ffi_call(KccOperation::DestroyKemKey, || {
         if uuid_bytes.is_null() {
             return Err(Status::InvalidArgument);
         }
@@ -272,7 +272,7 @@ pub unsafe extern "C" fn key_manager_enumerate_kem_keys(
     offset: usize,
     out_has_more: Option<&mut bool>,
 ) -> i32 {
-    km_common::ffi_call_i32(|| {
+    km_common::ffi_call_i32(KccOperation::EnumerateKemKeys, || {
         if out_entries.is_null() {
             return Err(Status::InvalidArgument);
         }
@@ -325,7 +325,7 @@ pub unsafe extern "C" fn key_manager_decap_and_seal(
     out_ciphertext: *mut u8,
     out_ciphertext_len: usize,
 ) -> Status {
-    km_common::ffi_call(|| {
+    km_common::ffi_call(KccOperation::DecapAndSeal, || {
         if uuid_bytes.is_null()
             || encapsulated_key.is_null()
             || encapsulated_key_len == 0
@@ -419,7 +419,7 @@ pub unsafe extern "C" fn key_manager_get_kem_key(
     out_algo_len: *mut usize,
     out_remaining_lifespan_secs: *mut u64,
 ) -> Status {
-    km_common::ffi_call(|| {
+    km_common::ffi_call(KccOperation::GetKemKey, || {
         if uuid_bytes.is_null()
             || out_kem_pubkey.is_null()
             || out_kem_pubkey_len == 0

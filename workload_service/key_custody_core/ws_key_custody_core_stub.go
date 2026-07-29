@@ -1,5 +1,6 @@
 //go:build !cgo || !linux || !amd64
 
+// Package wskcc provides stubs for platforms without Rust key custody support.
 package wskcc
 
 import (
@@ -26,7 +27,7 @@ func DestroyBindingKey(_ uuid.UUID) error {
 }
 
 // GetBindingKey is a stub for architectures where the Rust library is not supported.
-func GetBindingKey(id uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
+func GetBindingKey(_ uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
 	return nil, nil, fmt.Errorf("GetBindingKey is not supported on this architecture")
 }
 
@@ -34,3 +35,6 @@ func GetBindingKey(id uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
 func DestroyAllKeys() error {
 	return fmt.Errorf("DestroyAllKeys is not supported on this architecture")
 }
+
+// InitTelemetry is a no-op stub for environments lacking Rust KCC support.
+func InitTelemetry(_ string) {}

@@ -15,13 +15,17 @@ import (
 
 	"github.com/GoogleCloudPlatform/key-protection-module/internal/telemetry"
 	keyprotectionservice "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service"
+	kpskcc "github.com/GoogleCloudPlatform/key-protection-module/key_protection_service/key_custody_core"
 	keymanager "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto"
 	workloadservice "github.com/GoogleCloudPlatform/key-protection-module/workload_service"
+	wskcc "github.com/GoogleCloudPlatform/key-protection-module/workload_service/key_custody_core"
 )
 
 const (
-	defaultSocketPath = "/run/container_launcher/kmaserver.sock"
-	defaultKpsPort    = 50050
+	defaultSocketPath        = "/run/container_launcher/kmaserver.sock"
+	defaultKpsPort           = 50050
+	workloadServiceName      = "workload_service"
+	keyProtectionServiceName = "key_protection_service"
 )
 
 func main() {
@@ -36,16 +40,22 @@ func main() {
 	mode := parseEnvEnum("KEY_PROTECTION_MECHANISM", keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED, keymanager.KeyProtectionMechanism_value)
 	role := parseEnvEnum("SERVICE_ROLE", keymanager.ServiceRole_SERVICE_ROLE_WSD, keymanager.ServiceRole_value)
 
-	serviceName := "workload_service"
-	if mode == keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM && role == keymanager.ServiceRole_SERVICE_ROLE_KPS {
-		serviceName = "key_protection_service"
+	runAsKPS := mode == keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM && role == keymanager.ServiceRole_SERVICE_ROLE_KPS
+	serviceName := workloadServiceName
+	if runAsKPS {
+		serviceName = keyProtectionServiceName
 	}
 	telemetry.InitLogger(serviceName)
+	if runAsKPS {
+		kpskcc.InitTelemetry(serviceName)
+	} else {
+		wskcc.InitTelemetry(serviceName)
+	}
 
 	slog.Info("Starting Key Protection Agent", "mode", mode, "role", role)
 
 	var err error
-	if mode == keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM && role == keymanager.ServiceRole_SERVICE_ROLE_KPS {
+	if runAsKPS {
 		err = runKps(ctx, *kpsPort, mode, role)
 	} else {
 		err = runWsd(ctx, *socketPath, mode, *kpsVMIP)
