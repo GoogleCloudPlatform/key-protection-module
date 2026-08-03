@@ -46,6 +46,8 @@ const (
 	defaultMaxBackoff     = 128 * time.Second
 	// math.MaxInt64 nanoseconds is approx 292 years or 9223372036 seconds.
 	maxDurationSeconds = math.MaxInt64 / int64(time.Second)
+	// defaultEnumerateLimit is the maximum number of KEM keys returned by enumeration.
+	defaultEnumerateLimit = 10000
 )
 
 // WorkloadService defines the interface for generating and managing binding keypairs.
@@ -667,7 +669,7 @@ func (s *Server) handleGetCapabilities(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleEnumerateKeys(w http.ResponseWriter, r *http.Request) {
-	keys, _, err := s.keyProtectionService.EnumerateKEMKeys(r.Context(), 100, 0)
+	keys, _, err := s.keyProtectionService.EnumerateKEMKeys(r.Context(), defaultEnumerateLimit, 0)
 	if err != nil {
 		writeError(w, fmt.Sprintf("failed to enumerate keys: %v", err), httpStatusFromError(err))
 		return

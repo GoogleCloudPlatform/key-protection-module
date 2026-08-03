@@ -101,6 +101,7 @@ type mockKeyProtectionService struct {
 	receivedKEMUUID       uuid.UUID
 	receivedEncKey        []byte
 	receivedAAD           []byte
+	receivedLimit         int32
 	enumeratedKeys        []kpskcc.KEMKeyInfo
 	enumerateErr          error
 }
@@ -111,7 +112,11 @@ func (m *mockKeyProtectionService) GenerateKEMKeypair(_ context.Context, _ *keym
 	return m.uuid, m.pubKey, m.err
 }
 
-func (m *mockKeyProtectionService) EnumerateKEMKeys(_ context.Context, _, _ int32) ([]kpskcc.KEMKeyInfo, bool, error) {
+func (m *mockKeyProtectionService) EnumerateKEMKeys(_ context.Context, limit, _ int32) ([]kpskcc.KEMKeyInfo, bool, error) {
+	m.receivedLimit = limit
+	if limit > 0 && int(limit) < len(m.enumeratedKeys) {
+		return m.enumeratedKeys[:limit], len(m.enumeratedKeys) > int(limit), m.enumerateErr
+	}
 	return m.enumeratedKeys, false, m.enumerateErr
 }
 
@@ -686,6 +691,49 @@ func TestHandleEnumerateKeysWithKeys(t *testing.T) {
 	// Approximate check for expiration time
 	if info2.ExpirationTime <= float64(time.Now().Unix()) {
 		t.Fatalf("expected expiration time in the future, got %f", info2.ExpirationTime)
+	}
+}
+
+func TestHandleEnumerateKeysAbove100Limit(t *testing.T) {
+	const totalKeys = 150
+	mockEnumKeys := make([]kpskcc.KEMKeyInfo, totalKeys)
+	for i := 0; i < totalKeys; i++ {
+		mockEnumKeys[i] = kpskcc.KEMKeyInfo{
+			ID: uuid.New(),
+			Algorithm: &keymanager.HpkeAlgorithm{
+				Kem:  keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+				Kdf:  keymanager.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
+				Aead: keymanager.AeadAlgorithm_AEAD_ALGORITHM_AES_256_GCM,
+			},
+			KEMPubKey:             []byte(fmt.Sprintf("pubkey-%d", i)),
+			RemainingLifespanSecs: 3600,
+		}
+	}
+
+	mockKps := &mockKeyProtectionService{enumeratedKeys: mockEnumKeys}
+	srv := newTestServer(t,
+		mockKps,
+		&mockWorkloadService{},
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/keys", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	if mockKps.receivedLimit != defaultEnumerateLimit {
+		t.Errorf("expected limit %d, got %d", defaultEnumerateLimit, mockKps.receivedLimit)
+	}
+
+	var resp api.EnumerateKeysResponse
+	if err := protojson.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(resp.KeyInfos) != totalKeys {
+		t.Fatalf("expected %d key infos, got %d (100 limit was not removed)", totalKeys, len(resp.KeyInfos))
 	}
 }
 
