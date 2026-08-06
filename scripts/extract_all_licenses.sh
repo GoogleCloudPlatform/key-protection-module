@@ -107,7 +107,7 @@ if os.path.exists(json_path):
       while read -r pkg ver; do
         mkdir -p "${output_dir}/cargo-${pkg}-${ver}"
         echo "Cargo Crate: ${pkg} v${ver}" > "${output_dir}/cargo-${pkg}-${ver}/LICENSE"
-        echo "Licensed under MIT / Apache-2.0 (See Rust Crates Registry)" >> "${output_dir}/cargo-${pkg}-${ver}/LICENSE"
+        echo "See https://crates.io/crates/${pkg}/${ver} for license details." >> "${output_dir}/cargo-${pkg}-${ver}/LICENSE"
       done
     fi
   fi
@@ -138,7 +138,7 @@ extract_go_licenses() {
           echo "Attempting google/go-licenses extraction..."
           local tmp_go_out
           tmp_go_out=$(mktemp -d)
-          if (cd "${gdir}" && go run github.com/google/go-licenses@latest save ./... --save_path="${tmp_go_out}" --force 2>/dev/null); then
+          if (cd "${gdir}" && go run github.com/google/go-licenses@v1.6.0 save ./... --save_path="${tmp_go_out}" --force 2>/dev/null); then
             echo "Successfully extracted Go license files using google/go-licenses."
             cp -r "${tmp_go_out}"/* "${output_dir}/" 2>/dev/null || true
             used_go_licenses=1
@@ -172,14 +172,36 @@ extract_go_licenses() {
 }
 
 extract_boringssl_licenses() {
-  local output_dir="$1"
-  echo "[4/4] Adding BoringSSL License Notice..."
+  local rootfs_dir="${1:-.}"
+  local output_dir="$2"
+  echo "[4/4] Extracting BoringSSL License..."
   mkdir -p "${output_dir}/boringssl-master"
-  cat << 'EOF' > "${output_dir}/boringssl-master/LICENSE"
+
+  local found_bssl_lic=""
+  for bssl_dir in "${rootfs_dir}/boringssl" "./boringssl" "/workspace/boringssl"; do
+    if [ -f "${bssl_dir}/LICENSE" ]; then
+      found_bssl_lic="${bssl_dir}/LICENSE"
+      break
+    elif [ -f "${bssl_dir}/NOTICE" ]; then
+      found_bssl_lic="${bssl_dir}/NOTICE"
+      break
+    elif [ -f "${bssl_dir}/COPYING" ]; then
+      found_bssl_lic="${bssl_dir}/COPYING"
+      break
+    fi
+  done
+
+  if [ -n "${found_bssl_lic}" ]; then
+    echo "Found BoringSSL license at ${found_bssl_lic}; copying..."
+    cp "${found_bssl_lic}" "${output_dir}/boringssl-master/LICENSE"
+  else
+    echo "BoringSSL submodule LICENSE file not found; writing fallback attribution notice..."
+    cat << 'EOF' > "${output_dir}/boringssl-master/LICENSE"
 BoringSSL / Google Cryptography
 BoringSSL is a fork of OpenSSL.
 Licensed under OpenSSL License and SSLeay License / Apache-2.0.
 EOF
+  fi
 }
 
 generate_summary_tsv() {
@@ -210,7 +232,7 @@ main() {
   extract_dpkg_licenses "${rootfs_dir}" "${output_dir}"
   extract_rust_licenses "${rootfs_dir}" "${output_dir}"
   extract_go_licenses "${rootfs_dir}" "${output_dir}"
-  extract_boringssl_licenses "${output_dir}"
+  extract_boringssl_licenses "${rootfs_dir}" "${output_dir}"
   generate_summary_tsv "${output_dir}"
 
   echo "Done! Extracted $(find "${output_dir}" -mindepth 2 -name "LICENSE" | wc -l) KPM licenses into ${output_dir}"
