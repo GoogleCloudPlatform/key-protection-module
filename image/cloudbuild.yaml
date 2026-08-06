@@ -256,6 +256,33 @@ steps:
         "gs://${_BUCKET_NAME}/kps-acos-build-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz",
       ]
 
+  - name: "golang:1.25-rc-bullseye"
+    id: "ExtractKpsLicenses"
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - |
+        set -ex
+        chmod +x ./scripts/extract_all_licenses.sh
+        mkdir -p /workspace/license_out/wsd
+        TARGET_ROOTFS="/workspace/oem-install/kps/rootfs"
+        if [ ! -d "${TARGET_ROOTFS}" ]; then
+          TARGET_ROOTFS="/workspace/oem-install"
+        fi
+        ./scripts/extract_all_licenses.sh "${TARGET_ROOTFS}" /workspace/license_out/wsd "wsd"
+        tar -czf /workspace/kps-licenses.tar.gz -C /workspace/license_out wsd
+
+  - name: "gcr.io/cloud-builders/gcloud"
+    id: "UploadKpsLicensesToGCS"
+    entrypoint: "gcloud"
+    args:
+      [
+        "storage",
+        "cp",
+        "/workspace/kps-licenses.tar.gz",
+        "gs://${_BUCKET_NAME}/kps-acos-build-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}_licenses.tar.gz",
+      ]
+
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
     id: "FetchBaseImageFeatures"
     entrypoint: "bash"
