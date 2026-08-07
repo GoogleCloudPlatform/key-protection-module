@@ -71,6 +71,45 @@ steps:
         docker push ${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA}
         docker push ${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME_TEST}:${SHORT_SHA}
 
+  - name: 'gcr.io/cloud-builders/docker'
+    id: ExportKpmRootfs
+    waitFor: ['BuildAgentImage']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -ex
+        mkdir -p /workspace/kpm_rootfs
+        container_id=$(docker create ${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA})
+        docker export "${container_id}" | tar -x -C /workspace/kpm_rootfs var/lib/dpkg/status usr/share/doc 2>/dev/null || true
+        docker rm "${container_id}"
+        cp Cargo.lock /workspace/kpm_rootfs/ 2>/dev/null || true
+        cp go.mod go.sum /workspace/kpm_rootfs/ 2>/dev/null || true
+        mkdir -p /workspace/kpm_rootfs/boringssl && cp boringssl/LICENSE /workspace/kpm_rootfs/boringssl/ 2>/dev/null || true
+
+  - name: 'golang:1.25-rc-bullseye'
+    id: ExtractKpsLicenses
+    waitFor: ['ExportKpmRootfs']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -ex
+        chmod +x ./scripts/extract_all_licenses.sh
+        mkdir -p /workspace/license_out/wsd
+        ./scripts/extract_all_licenses.sh /workspace/kpm_rootfs /workspace/license_out/wsd "wsd"
+        tar -czf /workspace/kps-licenses.tar.gz -C /workspace/license_out wsd
+
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: UploadKpsLicensesToGCS
+    waitFor: ['ExtractKpsLicenses']
+    entrypoint: 'gcloud'
+    args:
+      - 'storage'
+      - 'cp'
+      - '/workspace/kps-licenses.tar.gz'
+      - 'gs://${PROJECT_ID}_cloudbuild/kps-acos-build-${BUILD_ID}/${_IMAGE_NAME}_licenses.tar.gz'
+
   # Create a GCE VM for tests
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: CreateTestVM
