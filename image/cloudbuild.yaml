@@ -266,10 +266,10 @@ steps:
         chmod +x ./scripts/extract_all_licenses.sh
         mkdir -p /workspace/license_out/wsd
         TARGET_ROOTFS="/workspace/oem-install/kps/rootfs"
-        if [ ! -d "${TARGET_ROOTFS}" ]; then
+        if [ ! -d "$${TARGET_ROOTFS}" ]; then
           TARGET_ROOTFS="/workspace/oem-install"
         fi
-        ./scripts/extract_all_licenses.sh "${TARGET_ROOTFS}" /workspace/license_out/wsd "wsd"
+        ./scripts/extract_all_licenses.sh "$${TARGET_ROOTFS}" /workspace/license_out/wsd "wsd"
         tar -czf /workspace/kps-licenses.tar.gz -C /workspace/license_out wsd
 
   - name: "gcr.io/cloud-builders/gcloud"
