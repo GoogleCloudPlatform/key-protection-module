@@ -59,39 +59,39 @@ func testValidation(t *testing.T, req interface{}, handler grpc.UnaryHandler) {
 }
 
 func TestDecapAndSealValidation(t *testing.T) {
-	server := &grpcServer{
-		svc: &mockKPS{},
+	server := &grpcServer{svc: &mockKPS{}}
+	handler := func(ctx context.Context, r interface{}) (interface{}, error) {
+		return server.DecapAndSeal(ctx, r.(*kpspb.DecapAndSealRequest))
 	}
 
-	req := &kpspb.DecapAndSealRequest{}
-
-	testValidation(t, req, func(ctx context.Context, r interface{}) (interface{}, error) {
-		return server.DecapAndSeal(ctx, r.(*kpspb.DecapAndSealRequest))
-	})
+	testValidation(t, &kpspb.DecapAndSealRequest{}, handler)
+	testValidation(t, &kpspb.DecapAndSealRequest{
+		KeyHandle: &keymanager.KeyHandle{Handle: "invalid"},
+	}, handler)
 }
 
 func TestDestroyKEMKeyValidation(t *testing.T) {
-	server := &grpcServer{
-		svc: &mockKPS{},
+	server := &grpcServer{svc: &mockKPS{}}
+	handler := func(ctx context.Context, r interface{}) (interface{}, error) {
+		return server.DestroyKEMKey(ctx, r.(*kpspb.DestroyKEMKeyRequest))
 	}
 
-	req := &kpspb.DestroyKEMKeyRequest{}
-
-	testValidation(t, req, func(ctx context.Context, r interface{}) (interface{}, error) {
-		return server.DestroyKEMKey(ctx, r.(*kpspb.DestroyKEMKeyRequest))
-	})
+	testValidation(t, &kpspb.DestroyKEMKeyRequest{}, handler)
+	testValidation(t, &kpspb.DestroyKEMKeyRequest{
+		KeyHandle: &keymanager.KeyHandle{Handle: "invalid"},
+	}, handler)
 }
 
 func TestGetKEMKeyValidation(t *testing.T) {
-	server := &grpcServer{
-		svc: &mockKPS{},
+	server := &grpcServer{svc: &mockKPS{}}
+	handler := func(ctx context.Context, r interface{}) (interface{}, error) {
+		return server.GetKEMKey(ctx, r.(*kpspb.GetKEMKeyRequest))
 	}
 
-	req := &kpspb.GetKEMKeyRequest{}
-
-	testValidation(t, req, func(ctx context.Context, r interface{}) (interface{}, error) {
-		return server.GetKEMKey(ctx, r.(*kpspb.GetKEMKeyRequest))
-	})
+	testValidation(t, &kpspb.GetKEMKeyRequest{}, handler)
+	testValidation(t, &kpspb.GetKEMKeyRequest{
+		KeyHandle: &keymanager.KeyHandle{Handle: "invalid"},
+	}, handler)
 }
 
 func TestNewGrpcServer(t *testing.T) {
@@ -99,6 +99,13 @@ func TestNewGrpcServer(t *testing.T) {
 	srv := NewGrpcServer(mock, "test-boot-token")
 	if srv == nil {
 		t.Fatal("expected server, got nil")
+	}
+
+	_, err := srv.DestroyKEMKey(context.Background(), &kpspb.DestroyKEMKeyRequest{
+		KeyHandle: &keymanager.KeyHandle{Handle: "invalid"},
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("expected InvalidArgument without an interceptor, got %v (err: %v)", status.Code(err), err)
 	}
 }
 
@@ -197,6 +204,7 @@ func TestDecapAndSeal(t *testing.T) {
 				Aad:        []byte("aad"),
 			},
 			decapAndSealFn: func(_ context.Context, _ uuid.UUID, _, _ []byte) ([]byte, []byte, error) {
+				t.Fatal("backend called for invalid key handle")
 				return nil, nil, nil
 			},
 			wantCode: codes.InvalidArgument,
@@ -330,6 +338,7 @@ func TestDestroyKEMKey(t *testing.T) {
 				KeyHandle: &keymanager.KeyHandle{Handle: "invalid"},
 			},
 			destroyKEMKeyFn: func(_ context.Context, _ uuid.UUID) error {
+				t.Fatal("backend called for invalid key handle")
 				return nil
 			},
 			wantCode: codes.InvalidArgument,
@@ -388,6 +397,7 @@ func TestGetKEMKey(t *testing.T) {
 				KeyHandle: &keymanager.KeyHandle{Handle: "invalid"},
 			},
 			GetKEMKeyFn: func(_ context.Context, _ uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+				t.Fatal("backend called for invalid key handle")
 				return nil, nil, nil, 0, nil
 			},
 			wantCode: codes.InvalidArgument,

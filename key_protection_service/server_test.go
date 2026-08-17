@@ -3,6 +3,7 @@ package keyprotectionservice
 import (
 	"context"
 	"net"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -103,6 +104,91 @@ func TestServerGRPCRegistration(t *testing.T) {
 	_, err = client.EnumerateKEMKeys(context.Background(), &kpspb.EnumerateKEMKeysRequest{Limit: 1, Offset: 0})
 	if err != nil {
 		t.Fatalf("gRPC call failed: %v", err)
+	}
+}
+
+func TestServerRejectsInvalidKeyHandleUUID(t *testing.T) {
+	var backendCalled atomic.Bool
+	mock := &mockKPS{
+		decapAndSealFn: func(_ context.Context, _ uuid.UUID, _, _ []byte) ([]byte, []byte, error) {
+			backendCalled.Store(true)
+			return nil, nil, nil
+		},
+		destroyKEMKeyFn: func(_ context.Context, _ uuid.UUID) error {
+			backendCalled.Store(true)
+			return nil
+		},
+		GetKEMKeyFn: func(_ context.Context, _ uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+			backendCalled.Store(true)
+			return nil, nil, nil, 0, nil
+		},
+	}
+
+	srv, err := newServerWithKPS(0, mock,
+		keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM,
+		keymanager.ServiceRole_SERVICE_ROLE_KPS,
+	)
+	if err != nil {
+		t.Fatalf("failed to create KPS server: %v", err)
+	}
+
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- srv.Serve()
+	}()
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(ctx)
+	}()
+
+	addr := srv.listener.Addr().String()
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("failed to dial grpc server: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	client := kpspb.NewKeyProtectionServiceClient(conn)
+	invalidHandle := &keymanager.KeyHandle{Handle: "not-a-uuid"}
+	tests := []struct {
+		name string
+		call func(context.Context) error
+	}{
+		{
+			name: "DecapAndSeal",
+			call: func(ctx context.Context) error {
+				_, err := client.DecapAndSeal(ctx, &kpspb.DecapAndSealRequest{KeyHandle: invalidHandle})
+				return err
+			},
+		},
+		{
+			name: "DestroyKEMKey",
+			call: func(ctx context.Context) error {
+				_, err := client.DestroyKEMKey(ctx, &kpspb.DestroyKEMKeyRequest{KeyHandle: invalidHandle})
+				return err
+			},
+		},
+		{
+			name: "GetKEMKey",
+			call: func(ctx context.Context) error {
+				_, err := client.GetKEMKey(ctx, &kpspb.GetKEMKeyRequest{KeyHandle: invalidHandle})
+				return err
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			backendCalled.Store(false)
+			err := tc.call(t.Context())
+			if status.Code(err) != codes.InvalidArgument {
+				t.Fatalf("expected InvalidArgument, got %v (err: %v)", status.Code(err), err)
+			}
+			if backendCalled.Load() {
+				t.Fatal("backend was called for an invalid key handle")
+			}
+		})
 	}
 }
 
@@ -297,6 +383,21 @@ func TestServerGetKeyClaims(t *testing.T) {
 		}
 	})
 
+	t.Run("WrongModeInvalidKeyHandle", func(t *testing.T) {
+		srv.mode = keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED
+		defer func() { srv.mode = keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM }()
+
+		req := &keymanager.GetKeyClaimsRequest{
+			KeyHandle: &keymanager.KeyHandle{Handle: "invalid-uuid"},
+			KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
+		}
+
+		_, err := client.GetKeyClaims(context.Background(), req)
+		if status.Code(err) != codes.PermissionDenied {
+			t.Fatalf("expected PermissionDenied code, got %v", err)
+		}
+	})
+
 	t.Run("WrongRole", func(t *testing.T) {
 		srv.role = keymanager.ServiceRole_SERVICE_ROLE_WSD
 		defer func() { srv.role = keymanager.ServiceRole_SERVICE_ROLE_KPS }()
@@ -313,6 +414,21 @@ func TestServerGetKeyClaims(t *testing.T) {
 
 		st, ok := status.FromError(err)
 		if !ok || st.Code() != codes.PermissionDenied {
+			t.Fatalf("expected PermissionDenied code, got %v", err)
+		}
+	})
+
+	t.Run("WrongRoleInvalidKeyHandle", func(t *testing.T) {
+		srv.role = keymanager.ServiceRole_SERVICE_ROLE_WSD
+		defer func() { srv.role = keymanager.ServiceRole_SERVICE_ROLE_KPS }()
+
+		req := &keymanager.GetKeyClaimsRequest{
+			KeyHandle: &keymanager.KeyHandle{Handle: "invalid-uuid"},
+			KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
+		}
+
+		_, err := client.GetKeyClaims(context.Background(), req)
+		if status.Code(err) != codes.PermissionDenied {
 			t.Fatalf("expected PermissionDenied code, got %v", err)
 		}
 	})

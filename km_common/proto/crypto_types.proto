@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package keymanager;
 
+import "buf/validate/validate.proto";
 import "km_common/proto/algorithms.proto";
 
 option go_package = "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto;keymanager";
@@ -9,7 +10,7 @@ option go_package = "github.com/GoogleCloudPlatform/key-protection-module/km_com
 // Used to refer to key instances held by the service.
 message KeyHandle {
   // A unique identifier (UUID) used to reference this key in subsequent operations.
-  string handle = 1;
+  string handle = 1 [(buf.validate.field).string.uuid = true];
 }
 
 // Information about a public key.

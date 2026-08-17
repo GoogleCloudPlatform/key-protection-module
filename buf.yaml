@@ -2,7 +2,8 @@ version: v2
 modules:
   - path: .
     excludes:
-      - keymanager/attestation_service/proto # excluding since this has a dynamic dependency on go-tpm-tools
+      # Generated separately because its pinned external protos are not Buf modules.
+      - keymanager/attestation_service/proto
 deps:
   - buf.build/bufbuild/protovalidate
 lint:

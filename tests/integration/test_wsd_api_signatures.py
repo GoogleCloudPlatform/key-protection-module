@@ -170,7 +170,7 @@ def test_enumerate_keys_success(wsd_client, valid_key_handle):
         (
             lambda key: {"key_handle": {"handle": "not-a-uuid"}, "ciphertext": {"algorithm": "KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256", "ciphertext": "dGVzdA=="}},
             400,
-            "invalid key_handle.handle"
+            "invalid request"
         ),
         # Unsupported KEM algorithm
         (
@@ -285,7 +285,7 @@ def test_destroy_key_success(wsd_client, valid_key_handle):
         (
             {"key_handle": {"handle": "not-a-uuid"}},
             400,
-            "invalid key handle"
+            "invalid request"
         ),
         # Key not found (valid UUID but non-existent)
         (

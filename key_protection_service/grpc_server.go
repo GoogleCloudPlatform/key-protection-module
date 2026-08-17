@@ -32,7 +32,14 @@ func NewGrpcServer(svc KeyProtectionService, bootToken string) kpspb.KeyProtecti
 }
 
 // ValidationInterceptor is a gRPC unary server interceptor that validates requests.
-func ValidationInterceptor(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+func ValidationInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	// GetKeyClaims must preserve its authorization-before-input-validation order.
+	// Its handler performs the required key-handle validation after the mode and
+	// role checks.
+	if info != nil && info.FullMethod == keymanager.KeyClaimsService_GetKeyClaims_FullMethodName {
+		return handler(ctx, req)
+	}
+
 	msg, ok := req.(proto.Message)
 	if !ok {
 		return nil, status.Errorf(codes.Internal, "request is not a proto message")
@@ -65,6 +72,14 @@ func grpcCodeFromError(err error) codes.Code {
 	return codes.Internal
 }
 
+func uuidFromKeyHandle(handle *keymanager.KeyHandle) (uuid.UUID, error) {
+	id, err := uuid.Parse(handle.GetHandle())
+	if err != nil {
+		return uuid.Nil, status.Errorf(codes.InvalidArgument, "invalid KEM key handle: %v", err)
+	}
+	return id, nil
+}
+
 // GenerateKEMKeypair generates a new KEM keypair.
 func (s *grpcServer) GenerateKEMKeypair(ctx context.Context, req *kpspb.GenerateKEMKeypairRequest) (*kpspb.GenerateKEMKeypairResponse, error) {
 	id, pubKey, err := s.svc.GenerateKEMKeypair(ctx, req.GetAlgo(), req.GetBindingPubKey().GetPublicKey(), req.GetLifespanSecs())
@@ -83,9 +98,9 @@ func (s *grpcServer) GenerateKEMKeypair(ctx context.Context, req *kpspb.Generate
 
 // DecapAndSeal decapsulates and reseals a shared secret.
 func (s *grpcServer) DecapAndSeal(ctx context.Context, req *kpspb.DecapAndSealRequest) (*kpspb.DecapAndSealResponse, error) {
-	kemUUID, err := uuid.Parse(req.GetKeyHandle().GetHandle())
+	kemUUID, err := uuidFromKeyHandle(req.GetKeyHandle())
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid KEM key handle: %v", err)
+		return nil, err
 	}
 
 	sealEnc, sealedCt, err := s.svc.DecapAndSeal(ctx, kemUUID, req.GetCiphertext().GetCiphertext(), req.GetAad())
@@ -124,9 +139,9 @@ func (s *grpcServer) EnumerateKEMKeys(ctx context.Context, req *kpspb.EnumerateK
 
 // DestroyKEMKey destroys a KEM key.
 func (s *grpcServer) DestroyKEMKey(ctx context.Context, req *kpspb.DestroyKEMKeyRequest) (*kpspb.DestroyKEMKeyResponse, error) {
-	kemUUID, err := uuid.Parse(req.GetKeyHandle().GetHandle())
+	kemUUID, err := uuidFromKeyHandle(req.GetKeyHandle())
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid KEM key handle: %v", err)
+		return nil, err
 	}
 
 	if err := s.svc.DestroyKEMKey(ctx, kemUUID); err != nil {
@@ -138,9 +153,9 @@ func (s *grpcServer) DestroyKEMKey(ctx context.Context, req *kpspb.DestroyKEMKey
 
 // GetKEMKey retrieves a KEM key's info.
 func (s *grpcServer) GetKEMKey(ctx context.Context, req *kpspb.GetKEMKeyRequest) (*kpspb.GetKEMKeyResponse, error) {
-	kemUUID, err := uuid.Parse(req.GetKeyHandle().GetHandle())
+	kemUUID, err := uuidFromKeyHandle(req.GetKeyHandle())
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid KEM key handle: %v", err)
+		return nil, err
 	}
 
 	kemPubKey, bindingPubKey, algo, lifespan, err := s.svc.GetKEMKey(ctx, kemUUID)
