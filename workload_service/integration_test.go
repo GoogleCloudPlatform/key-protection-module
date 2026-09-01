@@ -155,7 +155,7 @@ func TestIntegrationGenerateKeysUniqueMappings(t *testing.T) {
 
 func TestIntegrationDestroyKey(t *testing.T) {
 	kpsSvc := kps.NewService()
-	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "", keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
+	srv, err := NewServer(kpsSvc, &realWorkloadService{}, filepath.Join(t.TempDir(), "test.sock"), keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
