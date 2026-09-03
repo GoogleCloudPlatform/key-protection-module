@@ -101,6 +101,7 @@ type mockKeyProtectionService struct {
 	receivedKEMUUID       uuid.UUID
 	receivedEncKey        []byte
 	receivedAAD           []byte
+	receivedLimit         int32
 	enumeratedKeys        []kpskcc.KEMKeyInfo
 	enumerateErr          error
 }
@@ -111,7 +112,8 @@ func (m *mockKeyProtectionService) GenerateKEMKeypair(_ context.Context, _ *keym
 	return m.uuid, m.pubKey, m.err
 }
 
-func (m *mockKeyProtectionService) EnumerateKEMKeys(_ context.Context, _, _ int32) ([]kpskcc.KEMKeyInfo, bool, error) {
+func (m *mockKeyProtectionService) EnumerateKEMKeys(_ context.Context, limit, _ int32) ([]kpskcc.KEMKeyInfo, bool, error) {
+	m.receivedLimit = limit
 	return m.enumeratedKeys, false, m.enumerateErr
 }
 
@@ -631,8 +633,9 @@ func TestHandleEnumerateKeysWithKeys(t *testing.T) {
 		},
 	}
 
+	mockKps := &mockKeyProtectionService{enumeratedKeys: mockEnumKeys}
 	srv := newTestServer(t,
-		&mockKeyProtectionService{enumeratedKeys: mockEnumKeys},
+		mockKps,
 		&mockWorkloadService{},
 	)
 
@@ -642,6 +645,10 @@ func TestHandleEnumerateKeysWithKeys(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	if mockKps.receivedLimit != defaultEnumerateLimit {
+		t.Errorf("expected limit %d, got %d", defaultEnumerateLimit, mockKps.receivedLimit)
 	}
 
 	var resp api.EnumerateKeysResponse

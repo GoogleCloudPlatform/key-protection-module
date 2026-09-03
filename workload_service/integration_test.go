@@ -99,6 +99,71 @@ func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
 	t.Logf("E2E: KEM key handle=%s, mapped binding handle=%s", kemUUID, bindingUUID)
 }
 
+func TestIntegrationEnumerateKeysAbove100Limit(t *testing.T) {
+	kpsSvc := kps.NewService()
+	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "test_enum.sock", keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
+	if err != nil {
+		t.Fatalf("failed to create server: %v", err)
+	}
+	t.Cleanup(func() { _ = srv.Shutdown(context.Background()) })
+
+	const totalKeys = 150
+	genReq := &api.GenerateKeyRequest{
+		Algorithm: &keymanager.AlgorithmDetails{
+			Type: "kem",
+			Params: &keymanager.AlgorithmParams{
+				Params: &keymanager.AlgorithmParams_KemId{
+					KemId: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+				},
+			},
+		},
+		Lifespan: 3600,
+	}
+	genBody, err := protojson.MarshalOptions{EmitUnpopulated: true, UseProtoNames: true}.Marshal(genReq)
+	if err != nil {
+		t.Fatalf("failed to marshal generate request: %v", err)
+	}
+
+	generatedKeys := make(map[string]bool, totalKeys)
+	for i := 0; i < totalKeys; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_key", bytes.NewReader(genBody))
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("failed to generate key %d: status %d code %s", i, w.Code, w.Body.String())
+		}
+		var genResp api.GenerateKeyResponse
+		if err := protojson.Unmarshal(w.Body.Bytes(), &genResp); err != nil {
+			t.Fatalf("failed to decode generate response %d: %v", i, err)
+		}
+		generatedKeys[genResp.KeyHandle.GetHandle()] = true
+	}
+
+	enumReq := httptest.NewRequest(http.MethodGet, "/v1/keys", nil)
+	enumW := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(enumW, enumReq)
+
+	if enumW.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", enumW.Code, enumW.Body.String())
+	}
+
+	var resp api.EnumerateKeysResponse
+	if err := protojson.Unmarshal(enumW.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode enumerate response: %v", err)
+	}
+	if len(resp.KeyInfos) < totalKeys {
+		t.Fatalf("expected at least %d key infos, got %d (100 limit was not removed)", totalKeys, len(resp.KeyInfos))
+	}
+
+	for _, ki := range resp.KeyInfos {
+		handle := ki.GetKeyHandle().GetHandle()
+		delete(generatedKeys, handle)
+	}
+	if len(generatedKeys) > 0 {
+		t.Fatalf("not all generated keys were enumerated; %d keys missing from enumeration", len(generatedKeys))
+	}
+}
+
 func TestIntegrationGenerateKeysUniqueMappings(t *testing.T) {
 	kpsSvc := kps.NewService()
 	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "test.sock", keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
