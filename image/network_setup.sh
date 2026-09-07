@@ -1,13 +1,15 @@
 #!/bin/bash
 mkdir -p /etc/systemd/network/
 
-cat << 'EOF' > /etc/systemd/network/00-static-tap.network
+cat << 'INNER_EOF' > /etc/systemd/network/00-static-tap.network
 [Match]
 Driver=virtio_net
 
 [Network]
 Address=192.168.100.3/24
+DHCP=no
+LinkLocalAddressing=no
 
 [Route]
 Gateway=192.168.100.1
-EOF
+INNER_EOF
