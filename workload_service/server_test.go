@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -1446,5 +1447,44 @@ func TestPerformHeartbeatTimeout(t *testing.T) {
 	// Verify that cleanup was triggered (map should be empty)
 	if len(srv.kemToBindingMap) != 0 {
 		t.Errorf("expected kemToBindingMap to be cleared after persistent failure, got size %d", len(srv.kemToBindingMap))
+	}
+}
+
+func TestHTTPSocketPermissions(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "test.sock")
+	srv, err := NewServer(&mockKeyProtectionService{}, &mockWorkloadService{}, socketPath, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
+	if err != nil {
+		t.Fatalf("failed to create server: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = srv.Shutdown(context.Background())
+	})
+
+	info, err := os.Stat(socketPath)
+	if err != nil {
+		t.Fatalf("failed to stat HTTP socket %s: %v", socketPath, err)
+	}
+	if perm := info.Mode().Perm(); perm != 0777 {
+		t.Errorf("expected HTTP socket %s to have permissions 0777, got %04o", socketPath, perm)
+	}
+}
+
+func TestGRPCSocketPermissions(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "test.sock")
+	srv, err := NewServer(&mockKeyProtectionService{}, &mockWorkloadService{}, socketPath, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
+	if err != nil {
+		t.Fatalf("failed to create server: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = srv.Shutdown(context.Background())
+	})
+
+	grpcSocketPath := strings.TrimSuffix(socketPath, filepath.Ext(socketPath)) + "-grpc.sock"
+	info, err := os.Stat(grpcSocketPath)
+	if err != nil {
+		t.Fatalf("failed to stat gRPC socket %s: %v", grpcSocketPath, err)
+	}
+	if perm := info.Mode().Perm(); perm != 0777 {
+		t.Errorf("expected gRPC socket %s to have permissions 0777, got %04o", grpcSocketPath, perm)
 	}
 }

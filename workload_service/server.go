@@ -409,6 +409,10 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 	if err != nil {
 		return nil, fmt.Errorf("failed to listen on unix socket %s: %w", socketPath, err)
 	}
+	if err := os.Chmod(socketPath, 0777); err != nil { //nolint:gosec
+		_ = ln.Close()
+		return nil, fmt.Errorf("failed to chmod unix socket %s: %w", socketPath, err)
+	}
 	s.httpListener = ln
 
 	grpcSocketPath := strings.TrimSuffix(socketPath, filepath.Ext(socketPath)) + "-grpc.sock"
@@ -417,6 +421,11 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 	if err != nil {
 		_ = ln.Close()
 		return nil, fmt.Errorf("failed to listen on gRPC unix socket %s: %w", grpcSocketPath, err)
+	}
+	if err := os.Chmod(grpcSocketPath, 0777); err != nil { //nolint:gosec
+		_ = ln.Close()
+		_ = grpcLis.Close()
+		return nil, fmt.Errorf("failed to chmod gRPC unix socket %s: %w", grpcSocketPath, err)
 	}
 
 	grpcSrv := grpc.NewServer()
