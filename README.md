@@ -1,4 +1,4 @@
-# Key Protection Module (KPM)
+## Key Protection Module (KPM)
 
 The Key Protection Module (KPM) provides a secure infrastructure for managing cryptographic keys.
 
